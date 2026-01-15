@@ -1,0 +1,8 @@
+{
+  "appName": {
+    "message": "Guia ASIN ATM"
+  },
+  "appDescription": {
+    "message": "Asistente de inventario para leer guias y registrar ASIN y cantidades en Excel Online."
+  }
+}

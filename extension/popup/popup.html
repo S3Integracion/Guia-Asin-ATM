@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guia ASIN ATM</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app" role="application">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">GA</div>
+          <div>
+            <h1 data-i18n="appTitle">Guia ASIN ATM</h1>
+            <p data-i18n="appSubtitle">
+              Sincroniza guias con Amazon Seller y Excel Online.
+            </p>
+          </div>
+        </div>
+        <div class="status-row">
+          <span class="status-label" data-i18n="statusLabel">Estado:</span>
+          <span class="status-pill" id="statusSession">Pendiente</span>
+        </div>
+      </header>
+
+      <section class="controls">
+        <label class="control">
+          <span data-i18n="languageLabel">Idioma</span>
+          <select id="languageSelect">
+            <option value="es">Espanol</option>
+            <option value="en">English (US)</option>
+          </select>
+        </label>
+        <label class="control">
+          <span data-i18n="regionLabel">Region Amazon</span>
+          <select id="regionSelect">
+            <option value="mx">Mexico (sellercentral.amazon.com.mx)</option>
+            <option value="us">USA (sellercentral.amazon.com)</option>
+            <option value="ca">Canada (sellercentral.amazon.ca)</option>
+            <option value="es">Espana (sellercentral.amazon.es)</option>
+            <option value="uk">UK (sellercentral.amazon.co.uk)</option>
+            <option value="de">Alemania (sellercentral.amazon.de)</option>
+            <option value="fr">Francia (sellercentral.amazon.fr)</option>
+            <option value="it">Italia (sellercentral.amazon.it)</option>
+            <option value="jp">Japon (sellercentral.amazon.co.jp)</option>
+          </select>
+        </label>
+      </section>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="config" role="tab" aria-selected="true">
+          <span data-i18n="tabConfig">Configuracion</span>
+        </button>
+        <button class="tab" data-tab="validation" role="tab" aria-selected="false">
+          <span data-i18n="tabValidation">Validacion</span>
+        </button>
+        <button class="tab" data-tab="execution" role="tab" aria-selected="false">
+          <span data-i18n="tabExecution">Ejecucion</span>
+        </button>
+        <button class="tab" data-tab="logs" role="tab" aria-selected="false">
+          <span data-i18n="tabLogs">Logs</span>
+        </button>
+      </nav>
+
+      <main class="panels">
+        <section class="panel active" id="panel-config" role="tabpanel">
+          <div class="card">
+            <div class="card-title" data-i18n="excelLinksTitle">Archivos Excel</div>
+            <label class="field">
+              <span data-i18n="excelDoc1Label">Documento 1 (solo lectura)</span>
+              <input
+                id="doc1Url"
+                type="url"
+                placeholder="https://..."
+                data-i18n-placeholder="excelDoc1Placeholder"
+              />
+            </label>
+            <label class="field">
+              <span data-i18n="excelDoc2Label">Documento 2 (salida)</span>
+              <input
+                id="doc2Url"
+                type="url"
+                placeholder="https://..."
+                data-i18n-placeholder="excelDoc2Placeholder"
+              />
+            </label>
+            <div class="field-row">
+              <label class="field">
+                <span data-i18n="sheetPrimaryLabel">Hoja principal</span>
+                <input id="sheetPrimary" type="text" placeholder="Resultados" />
+              </label>
+              <label class="field">
+                <span data-i18n="sheetDupLabel">Hoja duplicados</span>
+                <input id="sheetDuplicates" type="text" placeholder="Duplicados" />
+              </label>
+            </div>
+            <button class="primary" id="saveConfig" type="button">
+              <span data-i18n="saveConfigButton">Guardar configuracion</span>
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="bolsasTitle">Columnas de Bolsas</div>
+            <p class="hint" data-i18n="bolsasHint">
+              Agrega los encabezados o nombres de columna donde estan los numeros de guia.
+            </p>
+            <div class="field-row">
+              <input
+                id="bolsaInput"
+                type="text"
+                placeholder="Bolsa A"
+                data-i18n-placeholder="bolsaPlaceholder"
+              />
+              <button class="ghost" id="addBolsa" type="button">
+                <span data-i18n="addBolsaButton">Agregar</span>
+              </button>
+            </div>
+            <div class="tag-list" id="bolsaList"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-validation" role="tabpanel">
+          <div class="card">
+            <div class="card-title" data-i18n="validationRulesTitle">Reglas persistentes</div>
+            <label class="toggle">
+              <input type="checkbox" id="dedupeGuide" />
+              <span data-i18n="dedupeGuideLabel">No repetir numero de guia</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="dedupeAsin" />
+              <span data-i18n="dedupeAsinLabel">No repetir ASIN</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="accumulateQty" />
+              <span data-i18n="accumulateQtyLabel">Acumular cantidad si ASIN ya existe</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="splitDuplicates" />
+              <span data-i18n="splitDuplicatesLabel">Enviar duplicados a hoja separada</span>
+            </label>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="integrityTitle">Estado de integridad</div>
+            <div class="stat-row">
+              <div>
+                <span class="stat-label" data-i18n="uniqueGuidesLabel">
+                  Guias unicas registradas
+                </span>
+                <strong id="uniqueGuidesCount">0</strong>
+              </div>
+              <div>
+                <span class="stat-label" data-i18n="uniqueAsinsLabel">ASIN unicos</span>
+                <strong id="uniqueAsinsCount">0</strong>
+              </div>
+            </div>
+            <div class="stat-row">
+              <div>
+                <span class="stat-label" data-i18n="lastRunLabel">Ultima corrida</span>
+                <strong id="lastRun">-</strong>
+              </div>
+              <div>
+                <span class="stat-label" data-i18n="lastErrorLabel">Ultimo error</span>
+                <strong id="lastError">-</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-execution" role="tabpanel">
+          <div class="card">
+            <div class="card-title" data-i18n="executionModeTitle">Modo de ejecucion</div>
+            <div class="mode-toggle">
+              <label>
+                <input type="radio" name="mode" value="assisted" checked />
+                <span data-i18n="modeAssisted">Asistido</span>
+              </label>
+              <label>
+                <input type="radio" name="mode" value="direct" />
+                <span data-i18n="modeDirect">Directo</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="card" id="assistedMode">
+            <div class="card-title" data-i18n="assistedTitle">Flujo asistido</div>
+            <ol class="steps">
+              <li data-i18n="step1">Verificar pestanas abiertas y sesion activa</li>
+              <li data-i18n="step2">Leer guias desde Documento 1</li>
+              <li data-i18n="step3">Buscar ASIN y cantidad en Amazon Seller</li>
+              <li data-i18n="step4">Consolidar y validar duplicados</li>
+              <li data-i18n="step5">Escribir resultados en Documento 2</li>
+            </ol>
+            <button class="primary" id="startAssisted" type="button">
+              <span data-i18n="startAssistedButton">Iniciar flujo asistido</span>
+            </button>
+          </div>
+
+          <div class="card hidden" id="directMode">
+            <div class="card-title" data-i18n="directTitle">Panel directo</div>
+            <div class="action-grid">
+              <button class="ghost" id="checkTabs" type="button">
+                <span data-i18n="checkTabsButton">Validar pestanas</span>
+              </button>
+              <button class="ghost" id="scanBolsas" type="button">
+                <span data-i18n="scanBolsasButton">Leer bolsas</span>
+              </button>
+              <button class="ghost" id="scanAmazon" type="button">
+                <span data-i18n="scanAmazonButton">Buscar en Amazon</span>
+              </button>
+              <button class="ghost" id="writeExcel" type="button">
+                <span data-i18n="writeExcelButton">Escribir Excel</span>
+              </button>
+              <button class="primary" id="runAll" type="button">
+                <span data-i18n="runAllButton">Ejecutar todo</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="statusTitle">Estado de sesion</div>
+            <div class="status-list">
+              <div class="status-item">
+                <span class="status-dot" id="sellerStatus"></span>
+                <span data-i18n="sellerStatusLabel">Amazon Seller abierto</span>
+              </div>
+              <div class="status-item">
+                <span class="status-dot" id="doc1Status"></span>
+                <span data-i18n="doc1StatusLabel">Documento 1 abierto</span>
+              </div>
+              <div class="status-item">
+                <span class="status-dot" id="doc2Status"></span>
+                <span data-i18n="doc2StatusLabel">Documento 2 abierto</span>
+              </div>
+            </div>
+            <button class="ghost" id="refreshStatus" type="button">
+              <span data-i18n="refreshStatusButton">Actualizar estado</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-logs" role="tabpanel">
+          <div class="card">
+            <div class="card-title" data-i18n="logsTitle">Logs recientes</div>
+            <div class="log-list" id="logList"></div>
+            <button class="ghost" id="clearLogs" type="button">
+              <span data-i18n="clearLogsButton">Limpiar logs</span>
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="historyTitle">Historial</div>
+            <div class="log-list" id="historyList"></div>
+            <button class="ghost" id="clearHistory" type="button">
+              <span data-i18n="clearHistoryButton">Limpiar historial</span>
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

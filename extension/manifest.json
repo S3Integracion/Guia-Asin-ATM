@@ -12,7 +12,14 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "tabs", "scripting", "clipboardRead", "clipboardWrite"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "clipboardRead",
+    "clipboardWrite",
+    "activeTab"
+  ],
   "host_permissions": [
     "https://sellercentral.amazon.com/*",
     "https://sellercentral.amazon.com.mx/*",
@@ -33,7 +40,14 @@
     "https://sellercentral.amazon.sg/*",
     "https://*.office.com/*",
     "https://*.live.com/*",
-    "https://*.sharepoint.com/*"
+    "https://onedrive.live.com/*",
+    "https://*.sharepoint.com/*",
+    "https://officeapps.live.com/*",
+    "https://*.officeapps.live.com/*",
+    "https://excel.officeapps.live.com/*",
+    "https://excel.office.com/*",
+    "https://excel.cloud.microsoft.com/*",
+    "https://excel.cloud.microsoft/*"
   ],
   "content_scripts": [
     {
@@ -62,9 +76,18 @@
       "matches": [
         "https://*.office.com/*",
         "https://*.live.com/*",
-        "https://*.sharepoint.com/*"
+        "https://onedrive.live.com/*",
+        "https://*.sharepoint.com/*",
+        "https://officeapps.live.com/*",
+        "https://*.officeapps.live.com/*",
+        "https://excel.officeapps.live.com/*",
+        "https://excel.office.com/*",
+        "https://excel.cloud.microsoft.com/*",
+        "https://excel.cloud.microsoft/*"
       ],
       "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
       "js": ["content/excel_online.js"]
     }
   ]

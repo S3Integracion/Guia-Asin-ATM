@@ -74,6 +74,19 @@ const SELLER_URL_PATTERNS = [
   "*://sellercentral.amazon.sg/*"
 ];
 
+const EXCEL_URL_PATTERNS = [
+  "*://*.office.com/*",
+  "*://*.live.com/*",
+  "*://onedrive.live.com/*",
+  "*://*.sharepoint.com/*",
+  "*://officeapps.live.com/*",
+  "*://*.officeapps.live.com/*",
+  "*://excel.officeapps.live.com/*",
+  "*://excel.office.com/*",
+  "*://excel.cloud.microsoft.com/*",
+  "*://excel.cloud.microsoft/*"
+];
+
 const STRINGS = {
   es: {
     appTitle: "Guia ASIN ATM",
@@ -97,7 +110,8 @@ const STRINGS = {
     sheetDupLabel: "Hoja duplicados",
     saveConfigButton: "Guardar configuracion",
     doc1SelectionTitle: "Seleccion Documento 1",
-    doc1SelectionHint: "Selecciona la columna o bolsa en Excel y presiona Capturar.",
+    doc1SelectionHint:
+      "Selecciona la columna o bolsa en Excel y presiona Capturar. Si falla, usa Ctrl+C antes.",
     doc1ModeLabel: "Modo de seleccion",
     doc1ModeInfer: "Inferir automaticamente",
     doc1ModeBolsa: "Bolsa",
@@ -108,7 +122,8 @@ const STRINGS = {
     doc1GuidesLabel: "Guias listas",
     doc1InvalidLabel: "Guias invalidas",
     doc2SelectionTitle: "Seleccion Documento 2",
-    doc2SelectionHint: "Selecciona la celda inicial (encabezado) en Excel y captura la salida.",
+    doc2SelectionHint:
+      "Selecciona la celda inicial (encabezado) en Excel y captura la salida.",
     captureDoc2Button: "Capturar salida",
     approveDoc2Button: "Aprobar seleccion",
     doc2StartLabel: "Celda inicial",
@@ -127,7 +142,8 @@ const STRINGS = {
     splitDuplicatesLabel: "Enviar duplicados a hoja separada",
     integrityTitle: "Estado de integridad",
     doc2ValidationTitle: "Validacion Documento 2",
-    doc2ValidationHint: "Selecciona la tabla actual (D-G) y captura para validar duplicados.",
+    doc2ValidationHint:
+      "Selecciona la tabla actual (D-G) y captura para validar duplicados. Si falla, usa Ctrl+C.",
     captureDoc2ExistingButton: "Capturar datos actuales",
     uniqueGuidesLabel: "Guias unicas registradas",
     uniqueAsinsLabel: "ASIN unicos",
@@ -183,7 +199,8 @@ const STRINGS = {
     sheetDupLabel: "Duplicate sheet",
     saveConfigButton: "Save configuration",
     doc1SelectionTitle: "Document 1 selection",
-    doc1SelectionHint: "Select the column or bag in Excel and press Capture.",
+    doc1SelectionHint:
+      "Select the column or bag in Excel and press Capture. If it fails, use Ctrl+C first.",
     doc1ModeLabel: "Selection mode",
     doc1ModeInfer: "Auto infer",
     doc1ModeBolsa: "Bag",
@@ -194,7 +211,8 @@ const STRINGS = {
     doc1GuidesLabel: "Guides ready",
     doc1InvalidLabel: "Invalid guides",
     doc2SelectionTitle: "Document 2 selection",
-    doc2SelectionHint: "Select the header start cell in Excel and capture the output.",
+    doc2SelectionHint:
+      "Select the header start cell in Excel and capture the output.",
     captureDoc2Button: "Capture output",
     approveDoc2Button: "Approve selection",
     doc2StartLabel: "Start cell",
@@ -213,7 +231,8 @@ const STRINGS = {
     splitDuplicatesLabel: "Send duplicates to separate sheet",
     integrityTitle: "Integrity status",
     doc2ValidationTitle: "Document 2 validation",
-    doc2ValidationHint: "Select the current table (D-G) and capture to validate duplicates.",
+    doc2ValidationHint:
+      "Select the current table (D-G) and capture to validate duplicates. If it fails, use Ctrl+C.",
     captureDoc2ExistingButton: "Capture current data",
     uniqueGuidesLabel: "Unique guides stored",
     uniqueAsinsLabel: "Unique ASINs",
@@ -339,6 +358,81 @@ const normalizeUrl = (value) => {
   }
 };
 
+const normalizeRangeToken = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const noAbs = raw.replace(/\$/g, "");
+  const bangIndex = noAbs.lastIndexOf("!");
+  return bangIndex >= 0 ? noAbs.slice(bangIndex + 1).trim() : noAbs;
+};
+
+const isRangeRef = (value) => {
+  const cleaned = normalizeRangeToken(value).toUpperCase();
+  if (!cleaned) {
+    return false;
+  }
+  if (/^[A-Z]{1,3}\d{1,7}$/.test(cleaned)) {
+    return true;
+  }
+  if (/^[A-Z]{1,3}\d{1,7}:[A-Z]{1,3}\d{1,7}$/.test(cleaned)) {
+    return true;
+  }
+  if (/^[A-Z]{1,3}:[A-Z]{1,3}$/.test(cleaned)) {
+    return true;
+  }
+  if (/^\d+:\d+$/.test(cleaned)) {
+    return true;
+  }
+  return false;
+};
+
+const isLikelyExcelUrl = (value) => {
+  if (!value) {
+    return false;
+  }
+  return /excel|officeapps|office|onedrive|sharepoint/i.test(value);
+};
+
+const extractDocSignature = (value) => {
+  if (!value) {
+    return "";
+  }
+  try {
+    const url = new URL(value);
+    const params = [
+      "docid",
+      "resid",
+      "id",
+      "itemid",
+      "driveitemid",
+      "fileid"
+    ];
+    const lowered = new Map();
+    for (const [key, val] of url.searchParams.entries()) {
+      lowered.set(key.toLowerCase(), val);
+    }
+    for (const key of params) {
+      const hit = lowered.get(key);
+      if (hit) {
+        return hit;
+      }
+    }
+    const cid = lowered.get("cid");
+    const itemId = lowered.get("id");
+    if (cid && itemId) {
+      return `${cid}:${itemId}`;
+    }
+    if (url.hostname.endsWith("1drv.ms")) {
+      return url.pathname.replace(/\//g, "");
+    }
+  } catch (error) {
+    return "";
+  }
+  return "";
+};
+
 const isSellerUrl = (value) => {
   try {
     const url = new URL(value);
@@ -347,6 +441,8 @@ const isSellerUrl = (value) => {
     return false;
   }
 };
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const safeTabsQuery = async (queryInfo, fallbackFilter) => {
   try {
@@ -358,7 +454,227 @@ const safeTabsQuery = async (queryInfo, fallbackFilter) => {
   }
 };
 
-const fallbackGetExcelSelection = async (tabId) => {
+const safeSendMessage = async (tabId, message, options = {}) => {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message, options);
+  } catch (error) {
+    return null;
+  }
+};
+
+const readClipboardText = async (attempts = 2, delayMs = 120) => {
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        return text;
+      }
+    } catch (error) {
+      // Ignore clipboard errors; we retry briefly.
+    }
+    if (i < attempts - 1) {
+      await sleep(delayMs);
+    }
+  }
+  return "";
+};
+
+const readExcelClipboardCache = async (tabId) => {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => ({
+        cachedClipboard: window.__GA_LAST_CLIPBOARD__ || "",
+        frameUrl: location.href
+      })
+    });
+    const hit = results.find(
+      (entry) => entry.result && entry.result.cachedClipboard
+    );
+    return hit && hit.result ? hit.result.cachedClipboard : "";
+  } catch (error) {
+    return "";
+  }
+};
+
+const sendExcelMessage = async (tabId, frameId, message) => {
+  if (Number.isInteger(frameId)) {
+    return safeSendMessage(tabId, message, { frameId });
+  }
+  return safeSendMessage(tabId, message);
+};
+
+const ensureExcelReady = async (tabId) => {
+  const injected = await ensureContentScript(tabId, "content/excel_online.js");
+  if (injected) {
+    return true;
+  }
+  return probeExcelUi(tabId);
+};
+
+const collectExcelCapture = async (tabId, initialClipboardText = "") => {
+  const fallback = await fallbackGetExcelSelection(tabId);
+  const frameId = Number.isInteger(fallback.frameId) ? fallback.frameId : null;
+  let response = null;
+  if (frameId !== null) {
+    response = await sendExcelMessage(tabId, frameId, { type: "CAPTURE_SELECTION" });
+  }
+  if (!response) {
+    response = await safeSendMessage(tabId, { type: "CAPTURE_SELECTION" });
+  }
+
+  let range =
+    (response && response.range) ||
+    fallback.range ||
+    fallback.cachedRange ||
+    fallback.cachedCell ||
+    "";
+  let column = (response && response.column) || extractColumnFromRange(range);
+  let clipboardText =
+    (response && response.clipboardText) ||
+    fallback.clipboardText ||
+    fallback.cachedClipboard ||
+    initialClipboardText ||
+    "";
+
+  if (!clipboardText) {
+    const copyResponse =
+      (frameId !== null &&
+        (await sendExcelMessage(tabId, frameId, { type: "COPY_SELECTION" }))) ||
+      (await safeSendMessage(tabId, { type: "COPY_SELECTION" }));
+    if (copyResponse && copyResponse.ok) {
+      await sleep(160);
+      clipboardText = (await readExcelClipboardCache(tabId)) || "";
+      if (!clipboardText) {
+        clipboardText = await readClipboardText(3, 160);
+      }
+    }
+  }
+
+  if (!clipboardText) {
+    clipboardText = initialClipboardText || (await readClipboardText());
+  }
+
+  return {
+    range,
+    column,
+    clipboardText,
+    fallback,
+    frameId,
+    response
+  };
+};
+
+const getExcelActiveCell = async (tabId, frameId) => {
+  let response = null;
+  if (Number.isInteger(frameId)) {
+    response = await sendExcelMessage(tabId, frameId, { type: "GET_ACTIVE_CELL" });
+  }
+  if (!response) {
+    response = await safeSendMessage(tabId, { type: "GET_ACTIVE_CELL" });
+  }
+  return response;
+};
+
+const setExcelSelection = async (tabId, frameId, range) => {
+  const payload = { type: "SET_SELECTION", range };
+  let response = null;
+  if (Number.isInteger(frameId)) {
+    response = await sendExcelMessage(tabId, frameId, payload);
+  }
+  if (!response) {
+    response = await safeSendMessage(tabId, payload);
+  }
+  if (response && response.ok) {
+    return response;
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      args: [range],
+      func: (targetRange) => {
+        const normalizeToken = (value) => {
+          const raw = String(value || "").trim();
+          if (!raw) {
+            return "";
+          }
+          const noAbs = raw.replace(/\$/g, "");
+          const bangIndex = noAbs.lastIndexOf("!");
+          return bangIndex >= 0 ? noAbs.slice(bangIndex + 1).trim() : noAbs;
+        };
+        const selectors = [
+          'input[aria-label="Name box"]',
+          'input[aria-label="Name Box"]',
+          'input[aria-label*="Name"]',
+          'input[aria-label*="Nombre"]',
+          '[data-automation-id*="nameBox"] input',
+          '[data-automation-id*="NameBox"] input',
+          '[data-automation-id="formulaNameBox"]',
+          '#NameBox input',
+          '#NameBox',
+          '[role="combobox"][aria-label*="Name"]',
+          '[role="combobox"][aria-label*="Nombre"]'
+        ];
+        const findNameBox = () => {
+          for (const selector of selectors) {
+            const hit = document.querySelector(selector);
+            if (hit) {
+              return hit.querySelector("input, textarea") || hit;
+            }
+          }
+          return null;
+        };
+        const input = findNameBox();
+        const clean = normalizeToken(targetRange);
+        if (!input || !clean) {
+          return { ok: false, reason: "name_box_missing" };
+        }
+        input.focus();
+        if ("value" in input) {
+          input.value = clean;
+        } else {
+          input.textContent = clean;
+        }
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true })
+        );
+        input.dispatchEvent(
+          new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true })
+        );
+        return { ok: true };
+      }
+    });
+    const hit = results.find((entry) => entry.result && entry.result.ok);
+    if (hit && hit.result) {
+      return hit.result;
+    }
+  } catch (error) {
+    return response;
+  }
+  return response;
+};
+
+const ensureContentScript = async (tabId, filePath) => {
+  const ping = await safeSendMessage(tabId, { type: "PING" });
+  if (ping) {
+    return true;
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: [filePath]
+    });
+    await sleep(200);
+    const retry = await safeSendMessage(tabId, { type: "PING" });
+    return Boolean(retry);
+  } catch (error) {
+    return false;
+  }
+};
+
+const probeExcelUi = async (tabId) => {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
@@ -368,42 +684,401 @@ const fallbackGetExcelSelection = async (tabId) => {
           'input[aria-label="Name Box"]',
           'input[aria-label*="Name"]',
           'input[aria-label*="Nombre"]',
+          'div[contenteditable="true"][aria-label*="Name"]',
+          'div[contenteditable="true"][aria-label*="Nombre"]',
+          'input[aria-label="Cuadro de nombre"]',
+          'input[aria-label="Cuadro de nombres"]',
           'input[title*="Name"]',
           'input[title*="Nombre"]',
-          '[data-automation-id*="nameBox"] input',
-          '[data-automation-id*="NameBox"] input',
-          '#NameBox input',
-          '#NameBox'
+          '[data-automation-id*="nameBox"]',
+          '[data-automation-id*="NameBox"]',
+          '[data-automation-id="formulaNameBox"]',
+          '[data-testid*="nameBox"]'
         ];
         const formulaSelectors = [
           'input[aria-label="Formula Bar"]',
           'input[aria-label="Barra de formulas"]',
           'input[aria-label*="Formula"]',
           'textarea[aria-label*="Formula"]',
-          '[role="textbox"][aria-label*="Formula"]'
+          '[role="textbox"][aria-label*="Formula"]',
+          'div[contenteditable="true"][aria-label*="Formula"]',
+          '[data-automation-id*="formulaBar"]',
+          '[data-testid*="formulaBar"]'
         ];
-        const getValue = (el) =>
-          el && (el.value || el.getAttribute("value") || el.textContent || "");
-        const nameBox = selectors
-          .map((selector) => document.querySelector(selector))
-          .find(Boolean);
-        const formulaBar = formulaSelectors
-          .map((selector) => document.querySelector(selector))
-          .find(Boolean);
-        const range = String(getValue(nameBox)).trim();
-        const activeValue = String(getValue(formulaBar)).trim();
-        try {
-          document.execCommand("copy");
-        } catch (error) {
-          return { range, activeValue };
-        }
-        return { range, activeValue };
+        const deepQuery = (selectorList) => {
+          const roots = [document];
+          const visited = new Set();
+          while (roots.length) {
+            const root = roots.shift();
+            if (!root || visited.has(root)) {
+              continue;
+            }
+            visited.add(root);
+            for (const selector of selectorList) {
+              const hits = root.querySelectorAll(selector);
+              for (const hit of hits) {
+                if (hit) {
+                  return hit;
+                }
+              }
+            }
+            const nodes = root.querySelectorAll ? root.querySelectorAll("*") : [];
+            nodes.forEach((node) => {
+              if (node.shadowRoot) {
+                roots.push(node.shadowRoot);
+              }
+            });
+          }
+          return null;
+        };
+        const hasNameBox = Boolean(deepQuery(selectors));
+        const hasFormula = Boolean(deepQuery(formulaSelectors));
+        const hasGrid = Boolean(document.querySelector('[role="grid"]'));
+        return hasNameBox || hasFormula || hasGrid;
       }
     });
-    const hit = results.find((entry) => entry.result && entry.result.range);
-    return hit ? hit.result : {};
+    return results.some((entry) => entry.result === true);
+  } catch (error) {
+    return false;
+  }
+};
+
+const fallbackGetExcelSelection = async (tabId) => {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: async () => {
+        const selectors = [
+          'input[aria-label="Name box"]',
+          'input[aria-label="Name Box"]',
+          'input[aria-label*="Name"]',
+          'input[aria-label*="Nombre"]',
+          'div[contenteditable="true"][aria-label*="Name"]',
+          'div[contenteditable="true"][aria-label*="Nombre"]',
+          'input[aria-label="Cuadro de nombre"]',
+          'input[aria-label="Cuadro de nombres"]',
+          'input[title*="Name"]',
+          'input[title*="Nombre"]',
+          '[data-automation-id*="nameBox"] input',
+          '[data-automation-id*="NameBox"] input',
+          '[data-automation-id="formulaNameBox"]',
+          '#NameBox input',
+          '#NameBox',
+          '[role="combobox"][aria-label*="Name"]',
+          '[role="combobox"][aria-label*="Nombre"]',
+          '[role="textbox"][aria-label*="Name"]',
+          '[role="textbox"][aria-label*="Nombre"]',
+          '[data-testid*="nameBox"]'
+        ];
+        const formulaSelectors = [
+          'input[aria-label="Formula Bar"]',
+          'input[aria-label="Barra de formulas"]',
+          'input[aria-label*="Formula"]',
+          'textarea[aria-label*="Formula"]',
+          '[role="textbox"][aria-label*="Formula"]',
+          'div[contenteditable="true"][aria-label*="Formula"]',
+          '[data-automation-id*="formulaBar"] input',
+          '[data-automation-id*="formulaBar"] textarea',
+          '[data-testid*="formulaBar"]',
+          'input[aria-label]',
+          'textarea[aria-label]',
+          '[role="textbox"][aria-label]',
+          'div[contenteditable="true"][aria-label]'
+        ];
+
+        const getValue = (el) =>
+          el && (el.value || el.getAttribute("value") || el.textContent || "");
+
+        const buildLabelText = (el) => {
+          const parts = [];
+          const nodes = [el, el ? el.parentElement : null];
+          nodes.forEach((node) => {
+            if (!node) {
+              return;
+            }
+            parts.push(
+              node.getAttribute("aria-label"),
+              node.getAttribute("title"),
+              node.getAttribute("data-automation-id"),
+              node.getAttribute("data-testid"),
+              node.getAttribute("data-test-id"),
+              node.id
+            );
+          });
+          return parts
+            .filter(Boolean)
+            .join(" ")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+        };
+        const isLikelyNameBox = (el) => {
+          if (!el) {
+            return false;
+          }
+          const label = buildLabelText(el);
+          if (!label) {
+            return false;
+          }
+          if (label.includes("font") || label.includes("fuente")) {
+            return false;
+          }
+          return (
+            label.includes("name box") ||
+            label.includes("namebox") ||
+            label.includes("cuadro de nombre") ||
+            label.includes("cuadro de nombres") ||
+            label.includes("formulanamebox")
+          );
+        };
+        const isLikelyFormulaBar = (el) => {
+          if (!el) {
+            return false;
+          }
+          const label = buildLabelText(el);
+          if (!label) {
+            return false;
+          }
+          return (
+            label.includes("formula bar") ||
+            label.includes("barra de formulas") ||
+            label.includes("formulabar")
+          );
+        };
+        const findDeep = (selectorList, predicate) => {
+          const roots = [document];
+          const visited = new Set();
+          while (roots.length) {
+            const root = roots.shift();
+            if (!root || visited.has(root)) {
+              continue;
+            }
+            visited.add(root);
+            for (const selector of selectorList) {
+              const hits = root.querySelectorAll(selector);
+              for (const hit of hits) {
+                if (hit && (!predicate || predicate(hit))) {
+                  return hit;
+                }
+              }
+            }
+            const nodes = root.querySelectorAll ? root.querySelectorAll("*") : [];
+            nodes.forEach((node) => {
+              if (node.shadowRoot) {
+                roots.push(node.shadowRoot);
+              }
+            });
+          }
+          return null;
+        };
+
+        const GRID_SELECTORS = [
+          '[role="grid"]',
+          '[data-automation-id="grid"]',
+          '[data-automation-id*="grid"]',
+          '[data-testid*="grid"]',
+          '[data-test-id*="grid"]'
+        ];
+        const findGrid = () => findDeep(GRID_SELECTORS, () => true);
+        const nameBox = findDeep(selectors, isLikelyNameBox);
+        const formulaBar = findDeep(formulaSelectors, isLikelyFormulaBar);
+        const grid = findGrid();
+        const hasGrid = Boolean(grid);
+        const hasUi = Boolean(nameBox || formulaBar || hasGrid);
+        const normalizeToken = (value) => {
+          const raw = String(value || "").trim();
+          if (!raw) {
+            return "";
+          }
+          const noAbs = raw.replace(/\$/g, "");
+          const bangIndex = noAbs.lastIndexOf("!");
+          return bangIndex >= 0 ? noAbs.slice(bangIndex + 1).trim() : noAbs;
+        };
+        const isRangeRef = (value) => {
+          const cleaned = normalizeToken(value).toUpperCase();
+          if (!cleaned) {
+            return false;
+          }
+          if (/^[A-Z]{1,3}\d{1,7}$/.test(cleaned)) {
+            return true;
+          }
+          if (/^[A-Z]{1,3}\d{1,7}:[A-Z]{1,3}\d{1,7}$/.test(cleaned)) {
+            return true;
+          }
+          if (/^[A-Z]{1,3}:[A-Z]{1,3}$/.test(cleaned)) {
+            return true;
+          }
+          if (/^\d+:\d+$/.test(cleaned)) {
+            return true;
+          }
+          return false;
+        };
+        const columnIndexToLetter = (index) => {
+          let current = Number(index);
+          let result = "";
+          while (current > 0) {
+            const mod = (current - 1) % 26;
+            result = String.fromCharCode(65 + mod) + result;
+            current = Math.floor((current - mod - 1) / 26);
+          }
+          return result;
+        };
+        const extractCellRefFromLabel = (label) => {
+          const match = String(label || "").match(/\b([A-Z]{1,3}\d{1,7})\b/);
+          return match ? match[1] : "";
+        };
+        const cellRefFromElement = (cell) => {
+          if (!cell) {
+            return "";
+          }
+          const colIndex = Number.parseInt(
+            cell.getAttribute("aria-colindex"),
+            10
+          );
+          const rowIndex = Number.parseInt(
+            cell.getAttribute("aria-rowindex"),
+            10
+          );
+          if (Number.isFinite(colIndex) && Number.isFinite(rowIndex)) {
+            return `${columnIndexToLetter(colIndex)}${rowIndex}`;
+          }
+          return extractCellRefFromLabel(cell.getAttribute("aria-label") || "");
+        };
+        const getActiveCellFromGrid = () => {
+          const container =
+            grid || findDeep(['[aria-activedescendant]'], () => true);
+          if (!container) {
+            return "";
+          }
+          const activeId = container.getAttribute("aria-activedescendant");
+          if (activeId) {
+            const activeCell = document.getElementById(activeId);
+            const ref = cellRefFromElement(activeCell);
+            if (ref) {
+              return ref;
+            }
+          }
+          const selectedCell =
+            container.querySelector('[role="gridcell"][aria-selected="true"]') ||
+            container.querySelector('[role="gridcell"][aria-selected="mixed"]') ||
+            container.querySelector('[role="gridcell"][tabindex="0"]');
+          const selectedRef = cellRefFromElement(selectedCell);
+          if (selectedRef) {
+            return selectedRef;
+          }
+          return extractCellRefFromLabel(
+            container.getAttribute("aria-label") || ""
+          );
+        };
+        let range = normalizeToken(getValue(nameBox));
+        if (!isRangeRef(range)) {
+          range = "";
+        }
+        if (!range) {
+          range = getActiveCellFromGrid();
+        }
+        if (!range) {
+          const active = document.activeElement;
+          const label = active ? active.getAttribute("aria-label") || "" : "";
+          range = extractCellRefFromLabel(label);
+        }
+        const activeValue = String(getValue(formulaBar)).trim();
+        let copyOk = false;
+        try {
+          if (grid && grid.focus) {
+            grid.focus();
+          }
+          copyOk = document.execCommand("copy");
+        } catch (error) {
+          copyOk = false;
+        }
+        let clipboardText = "";
+        try {
+          clipboardText = await navigator.clipboard.readText();
+        } catch (error) {
+          clipboardText = "";
+        }
+        const cachedRange = window.__GA_LAST_RANGE__ || "";
+        const cachedCell = window.__GA_LAST_CELL__ || "";
+        const cachedClipboard = window.__GA_LAST_CLIPBOARD__ || "";
+        return {
+          range,
+          activeValue,
+          copyOk,
+          clipboardText,
+          hasUi,
+          hasGrid,
+          cachedRange,
+          cachedCell,
+          cachedClipboard,
+          frameUrl: location.href
+        };
+      }
+    });
+    const pickBest = (entries) => {
+      let best = null;
+      let bestScore = -1;
+      entries.forEach((entry) => {
+        if (!entry || !entry.result) {
+          return;
+        }
+        const result = entry.result;
+        const rangeCandidate =
+          result.range || result.cachedRange || result.cachedCell || "";
+        const score =
+          (isRangeRef(rangeCandidate) ? 6 : 0) +
+          (result.hasGrid ? 3 : 0) +
+          (result.clipboardText ? 1 : 0) +
+          (result.hasUi ? 1 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = entry;
+        }
+      });
+      return best;
+    };
+    const hit = pickBest(results);
+    if (!hit || !hit.result) {
+      return {};
+    }
+    return {
+      ...hit.result,
+      frameId: hit.frameId
+    };
   } catch (error) {
     return {};
+  }
+};
+
+const fallbackPasteExcelTsv = async (tabId, tsv) => {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      args: [tsv],
+      func: (payload) => {
+        let clipboardOk = false;
+        let pasteOk = false;
+        try {
+          navigator.clipboard.writeText(payload);
+          clipboardOk = true;
+        } catch (error) {
+          clipboardOk = false;
+        }
+        try {
+          pasteOk = document.execCommand("paste");
+        } catch (error) {
+          pasteOk = false;
+        }
+        return { clipboardOk, pasteOk };
+      }
+    });
+    const hit = results.find((entry) => entry.result && entry.result.pasteOk);
+    if (hit && hit.result) {
+      return { ...hit.result };
+    }
+    return { clipboardOk: false, pasteOk: false };
+  } catch (error) {
+    return { clipboardOk: false, pasteOk: false };
   }
 };
 
@@ -412,30 +1087,76 @@ const isTabOpen = (tabs, targetUrl) => {
     return false;
   }
   const normalized = normalizeUrl(targetUrl);
+  const signature = extractDocSignature(targetUrl);
   return tabs.some((tab) => {
     if (!tab.url) {
       return false;
     }
-    if (normalized) {
-      return tab.url.includes(normalized);
+    if (normalized && tab.url.includes(normalized)) {
+      return true;
     }
-    return tab.url.includes(targetUrl);
+    if (signature && tab.url.includes(signature)) {
+      return true;
+    }
+    if (!normalized && tab.url.includes(targetUrl)) {
+      return true;
+    }
+    return false;
   });
 };
 
 const findExcelTab = async (targetUrl) => {
-  if (!targetUrl) {
-    return null;
-  }
   const excelTabs = await safeTabsQuery({
-    url: ["*://*.office.com/*", "*://*.live.com/*", "*://*.sharepoint.com/*"]
+    url: EXCEL_URL_PATTERNS
   });
+  if (!targetUrl) {
+    return excelTabs.find((tab) => tab.active) || excelTabs[0] || null;
+  }
   const normalized = normalizeUrl(targetUrl);
-  return (
+  const directMatch =
     excelTabs.find((tab) => tab.url && tab.url.includes(normalized)) ||
-    excelTabs.find((tab) => tab.url && tab.url.includes(targetUrl)) ||
-    null
-  );
+    excelTabs.find((tab) => tab.url && tab.url.includes(targetUrl));
+  if (directMatch) {
+    return directMatch;
+  }
+  const signature = extractDocSignature(targetUrl);
+  if (signature) {
+    const signatureMatch = excelTabs.find(
+      (tab) => tab.url && tab.url.includes(signature)
+    );
+    if (signatureMatch) {
+      return signatureMatch;
+    }
+  }
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+  if (activeTab) {
+    if (await probeExcelUi(activeTab.id)) {
+      logEvent("info", "Pestana activa detectada como Excel Online.");
+      return activeTab;
+    }
+    if (isLikelyExcelUrl(activeTab.url || "")) {
+      logEvent("info", "Usando pestana activa con URL de Excel Online.");
+      return activeTab;
+    }
+  }
+  for (const tab of excelTabs) {
+    if (await probeExcelUi(tab.id)) {
+      logEvent("info", "Pestana Excel detectada por UI.");
+      return tab;
+    }
+  }
+  const allTabs = await chrome.tabs.query({ currentWindow: true });
+  const candidates = allTabs.filter((tab) => isLikelyExcelUrl(tab.url || ""));
+  for (const tab of candidates) {
+    if (await probeExcelUi(tab.id)) {
+      logEvent("info", "Pestana Excel detectada por coincidencia de UI.");
+      return tab;
+    }
+  }
+  return null;
 };
 
 const columnLetterToIndex = (letters) => {
@@ -458,8 +1179,22 @@ const columnIndexToLetter = (index) => {
   return result || "";
 };
 
+const extractColumnFromRange = (range) => {
+  const normalized = normalizeRangeToken(range);
+  if (!normalized || !isRangeRef(normalized)) {
+    return "";
+  }
+  const cleaned = String(normalized).toUpperCase().split(":")[0];
+  const match = cleaned.match(/^([A-Z]+)\d*/);
+  return match ? match[1] : "";
+};
+
 const parseCellRef = (value) => {
-  const match = String(value || "").toUpperCase().match(/^([A-Z]+)(\d+)$/);
+  const cleaned = normalizeRangeToken(value).toUpperCase().split(":")[0];
+  if (!cleaned) {
+    return null;
+  }
+  const match = cleaned.match(/^([A-Z]+)(\d+)$/);
   if (!match) {
     return null;
   }
@@ -495,10 +1230,9 @@ const normalizeGuideValue = (value) => {
   return "";
 };
 
-const parseGuidesFromClipboard = (text, mode) => {
-  const rows = text.replace(/\r/g, "").split("\n");
-  const firstColumn = rows.map((row) => row.split("\t")[0].trim());
-  const bolsaLines = firstColumn.filter((line) => /bolsa/i.test(line));
+const parseGuidesFromColumn = (values, mode) => {
+  const cleanedValues = values.map((value) => String(value || "").trim());
+  const bolsaLines = cleanedValues.filter((line) => /bolsa/i.test(line));
   const hasBolsa = bolsaLines.length > 0;
   const inferredType = bolsaLines.length > 1 ? "columna" : "bolsa";
   let selectionType = mode === "infer" ? inferredType : mode;
@@ -514,7 +1248,7 @@ const parseGuidesFromClipboard = (text, mode) => {
   let inBag = selectionType !== "bolsa";
   let bagLabel = "";
 
-  for (const rawValue of firstColumn) {
+  for (const rawValue of cleanedValues) {
     const value = rawValue.trim();
     if (!value) {
       emptyRun += 1;
@@ -560,6 +1294,53 @@ const parseGuidesFromClipboard = (text, mode) => {
     selectionType,
     bagLabel
   };
+};
+
+const parseGuidesFromClipboard = (text, mode) => {
+  const rows = text.replace(/\r/g, "").split("\n");
+  const parsedRows = rows.map((row) => row.split("\t"));
+  const columnCount = parsedRows.reduce(
+    (max, row) => Math.max(max, row.length),
+    0
+  );
+  if (columnCount <= 1) {
+    const columnValues = parsedRows.map((row) => row[0] || "");
+    const result = parseGuidesFromColumn(columnValues, mode);
+    return { ...result, columnOffset: 0 };
+  }
+
+  let best = null;
+  for (let col = 0; col < columnCount; col += 1) {
+    const columnValues = parsedRows.map((row) => row[col] || "");
+    const result = parseGuidesFromColumn(columnValues, mode);
+    if (!best) {
+      best = { ...result, columnOffset: col };
+      continue;
+    }
+    if (result.guides.length > best.guides.length) {
+      best = { ...result, columnOffset: col };
+      continue;
+    }
+    if (
+      result.guides.length === best.guides.length &&
+      result.invalidCount < best.invalidCount
+    ) {
+      best = { ...result, columnOffset: col };
+    }
+  }
+
+  if (!best) {
+    return {
+      guides: [],
+      invalidCount: 0,
+      duplicateCount: 0,
+      selectionType: mode === "bolsa" ? "bolsa" : "columna",
+      bagLabel: "",
+      columnOffset: 0
+    };
+  }
+
+  return best;
 };
 
 const parseDoc2ExistingFromClipboard = (text) => {
@@ -666,9 +1447,14 @@ const buildOutputRows = (results) => {
     }
 
     const hasMultipleAsins = entries.length > 1;
+    const hasMultipleItems =
+      Array.isArray(result.items) && result.items.length > 1;
     const hasQtyOverOne = entries.some(([, qty]) => qty > 1);
-    if (hasMultipleAsins || hasQtyOverOne) {
-      const reason = hasMultipleAsins ? "Varios productos por guia" : "Cantidad mayor a 1";
+    if (hasMultipleAsins || hasMultipleItems || hasQtyOverOne) {
+      const reason =
+        hasMultipleAsins || hasMultipleItems
+          ? "Varios productos por guia"
+          : "Cantidad mayor a 1";
       entries.forEach(([asin, qty]) => {
         pushManual(guide, asin, qty, reason);
       });
@@ -705,7 +1491,7 @@ const refreshStatus = async () => {
     isSellerUrl(tab.url || "")
   );
   const excelTabs = await safeTabsQuery({
-    url: ["*://*.office.com/*", "*://*.live.com/*", "*://*.sharepoint.com/*"]
+    url: EXCEL_URL_PATTERNS
   });
 
   const sellerReady = sellerTabs.length > 0;
@@ -780,8 +1566,9 @@ const renderLogList = (list, containerId, emptyKey) => {
 };
 
 const updateDoc1Summary = () => {
+  const range = normalizeRangeToken(currentSettings.doc1Selection.range);
   document.getElementById("doc1Range").textContent =
-    currentSettings.doc1Selection.range || "-";
+    isRangeRef(range) ? range : "-";
   document.getElementById("doc1Type").textContent =
     currentSettings.doc1Selection.selectionType || "-";
   document.getElementById("doc1Count").textContent =
@@ -792,8 +1579,11 @@ const updateDoc1Summary = () => {
 };
 
 const updateDoc2Summary = () => {
-  document.getElementById("doc2StartCell").textContent =
-    currentSettings.doc2Selection.startCell || "-";
+  const startCell = normalizeRangeToken(currentSettings.doc2Selection.startCell);
+  const validCell = /^[A-Z]{1,3}\d{1,7}$/.test(startCell);
+  document.getElementById("doc2StartCell").textContent = validCell
+    ? startCell
+    : "-";
   document.getElementById("doc2ManualCol").textContent =
     currentSettings.doc2Selection.manualColumn || "-";
   document.getElementById("doc2ApprovalStatus").textContent = currentSettings
@@ -902,6 +1692,7 @@ const captureDoc1Selection = async () => {
     await setLastError("Documento 1 sin link.");
     return;
   }
+  const clipboardPromise = navigator.clipboard.readText().catch(() => "");
   const tab = await findExcelTab(currentSettings.excelDoc1Url);
   if (!tab) {
     logEvent("error", "Documento 1 no esta abierto en Excel Online.");
@@ -909,22 +1700,22 @@ const captureDoc1Selection = async () => {
     return;
   }
 
-  let response = null;
-  try {
-    response = await chrome.tabs.sendMessage(tab.id, { type: "CAPTURE_SELECTION" });
-  } catch (error) {
-    response = null;
+  const ready = await ensureExcelReady(tab.id);
+  if (!ready) {
+    logEvent("error", "Excel Online no esta listo para capturar.");
+    await setLastError("Excel Online no esta listo.");
+    return;
   }
 
-  let clipboardText = (response && response.clipboardText) || "";
+  const initialClipboardText = await clipboardPromise;
+  const capture = await collectExcelCapture(tab.id, initialClipboardText);
+  const fallback = capture.fallback || {};
+  let clipboardText = capture.clipboardText || "";
   if (!clipboardText) {
-    try {
-      clipboardText = await navigator.clipboard.readText();
-    } catch (error) {
-      clipboardText = "";
-    }
-  }
-  if (!clipboardText) {
+    logEvent(
+      "error",
+      `Debug Excel: range=${fallback.range || "-"} cached=${fallback.cachedRange || "-"} cell=${fallback.cachedCell || "-"} ui=${fallback.hasUi ? "si" : "no"} grid=${fallback.hasGrid ? "si" : "no"}`
+    );
     logEvent(
       "error",
       "No se pudo leer la seleccion. Selecciona el rango y presiona Ctrl+C, luego Capturar."
@@ -933,18 +1724,29 @@ const captureDoc1Selection = async () => {
     return;
   }
 
-  let range = (response && response.range) || "";
-  let column = (response && response.column) || "";
-  if (!range) {
-    const fallback = await fallbackGetExcelSelection(tab.id);
-    range = fallback.range || "";
-    column = extractColumnFromRange(range);
+  let range = capture.range || "";
+  let column = capture.column || extractColumnFromRange(range);
+  range = normalizeRangeToken(range);
+  if (!isRangeRef(range)) {
+    range = "";
+    column = "";
+  }
+  if (!range && fallback.hasUi) {
+    logEvent(
+      "error",
+      "Excel detectado, pero no se pudo leer la celda activa. Haz clic en una celda y vuelve a intentar."
+    );
   }
 
   const parsed = parseGuidesFromClipboard(
     clipboardText,
     currentSettings.doc1Selection.mode || "infer"
   );
+  const baseColumn = extractColumnFromRange(range);
+  if (Number.isInteger(parsed.columnOffset) && baseColumn) {
+    const baseIndex = columnLetterToIndex(baseColumn);
+    column = columnIndexToLetter(baseIndex + parsed.columnOffset);
+  }
 
   currentSettings.doc1Selection = {
     ...currentSettings.doc1Selection,
@@ -965,6 +1767,15 @@ const captureDoc1Selection = async () => {
     `Documento 1 capturado. Guias: ${parsed.guides.length}, invalidas: ${parsed.invalidCount}.`
   );
   if (!parsed.guides.length) {
+    const rows = clipboardText.replace(/\r/g, "").split("\n");
+    const maxCols = rows.reduce(
+      (max, row) => Math.max(max, row.split("\t").length),
+      0
+    );
+    logEvent(
+      "info",
+      `Clipboard detectado: filas=${rows.length}, columnas=${maxCols}, longitud=${clipboardText.length}.`
+    );
     logEvent(
       "error",
       "No se detectaron guias. Verifica la seleccion y que este copiada."
@@ -988,26 +1799,39 @@ const captureDoc2Selection = async () => {
     return;
   }
 
-  let response = null;
-  try {
-    response = await chrome.tabs.sendMessage(tab.id, { type: "GET_ACTIVE_CELL" });
-  } catch (error) {
-    response = null;
+  const ready = await ensureExcelReady(tab.id);
+  if (!ready) {
+    logEvent("error", "Excel Online no esta listo para capturar.");
+    await setLastError("Excel Online no esta listo.");
+    return;
   }
+
+  const fallback = await fallbackGetExcelSelection(tab.id);
+  const response = await getExcelActiveCell(tab.id, fallback.frameId);
 
   let activeCell = response ? response.activeCell : "";
   let activeValue = response ? response.activeValue || "" : "";
   if (!activeCell) {
-    const fallback = await fallbackGetExcelSelection(tab.id);
-    activeCell = fallback.range || "";
+    activeCell = fallback.range || fallback.cachedRange || fallback.cachedCell || "";
     activeValue = fallback.activeValue || "";
   }
-  const parsed = parseCellRef(activeCell);
+  const normalizedCell = normalizeRangeToken(activeCell);
+  const parsed = parseCellRef(normalizedCell);
   if (!parsed) {
+    logEvent(
+      "error",
+      `Debug Excel: range=${fallback.range || "-"} cached=${fallback.cachedRange || "-"} cell=${fallback.cachedCell || "-"} ui=${fallback.hasUi ? "si" : "no"} grid=${fallback.hasGrid ? "si" : "no"}`
+    );
     logEvent(
       "error",
       "No se pudo leer la celda. Haz clic en la celda inicial y presiona Capturar."
     );
+    if (fallback.hasUi) {
+      logEvent(
+        "error",
+        "Excel detectado, pero no se pudo leer la celda activa. Confirma que la celda esta seleccionada."
+      );
+    }
     await setLastError("Seleccion invalida en Documento 2.");
     return;
   }
@@ -1018,7 +1842,7 @@ const captureDoc2Selection = async () => {
 
   currentSettings.doc2Selection = {
     ...currentSettings.doc2Selection,
-    startCell: activeCell,
+    startCell: normalizedCell || activeCell,
     startColumn: parsed.column,
     startRow: parsed.row,
     manualColumn,
@@ -1053,6 +1877,7 @@ const captureDoc2Existing = async () => {
     await setLastError("Documento 2 sin link.");
     return;
   }
+  const clipboardPromise = navigator.clipboard.readText().catch(() => "");
   const tab = await findExcelTab(currentSettings.excelDoc2Url);
   if (!tab) {
     logEvent("error", "Documento 2 no esta abierto en Excel Online.");
@@ -1060,21 +1885,16 @@ const captureDoc2Existing = async () => {
     return;
   }
 
-  let response = null;
-  try {
-    response = await chrome.tabs.sendMessage(tab.id, { type: "CAPTURE_SELECTION" });
-  } catch (error) {
-    response = null;
+  const ready = await ensureExcelReady(tab.id);
+  if (!ready) {
+    logEvent("error", "Excel Online no esta listo para capturar.");
+    await setLastError("Excel Online no esta listo.");
+    return;
   }
 
-  let clipboardText = (response && response.clipboardText) || "";
-  if (!clipboardText) {
-    try {
-      clipboardText = await navigator.clipboard.readText();
-    } catch (error) {
-      clipboardText = "";
-    }
-  }
+  const initialClipboardText = await clipboardPromise;
+  const capture = await collectExcelCapture(tab.id, initialClipboardText);
+  let clipboardText = capture.clipboardText || "";
   if (!clipboardText) {
     logEvent(
       "error",
@@ -1090,6 +1910,9 @@ const captureDoc2Existing = async () => {
     doc2Guides: parsed.guides,
     doc2AsinsByGuide: parsed.asinsByGuide
   };
+  if (parsed.guides.length || parsed.maxIndex) {
+    currentSettings.doc2Selection.headersEnsured = true;
+  }
   if (parsed.maxIndex && parsed.maxIndex > 0) {
     currentSettings.doc2Selection.nextIndex = parsed.maxIndex + 1;
   }
@@ -1109,10 +1932,18 @@ const runAmazonLookup = async () => {
     await setLastError("Sin guias capturadas.");
     return;
   }
+  logEvent("info", `Iniciando busqueda en Amazon. Guias: ${guides.length}.`);
   const sellerTab = await findSellerTab();
   if (!sellerTab) {
     logEvent("error", "No hay pestana activa de Amazon Seller.");
     await setLastError("Amazon Seller no esta abierto.");
+    return;
+  }
+
+  const ready = await ensureContentScript(sellerTab.id, "content/amazon_seller.js");
+  if (!ready) {
+    logEvent("error", "Amazon Seller no esta listo para recibir comandos.");
+    await setLastError("Amazon Seller no esta listo.");
     return;
   }
 
@@ -1135,6 +1966,11 @@ const runAmazonLookup = async () => {
   }
 
   const output = buildOutputRows(response.results || []);
+  if (!output.mainRows.length && !output.manualRows.length) {
+    logEvent("error", "Amazon no devolvio items para procesar.");
+    await setLastError("Amazon sin items.");
+    return;
+  }
   currentSettings.pendingOutput = {
     mainRows: output.mainRows,
     manualRows: output.manualRows,
@@ -1163,6 +1999,7 @@ const writeExcelOutput = async () => {
     await setLastError("Sin datos pendientes para escribir.");
     return;
   }
+  logEvent("info", "Escribiendo resultados en Excel Online...");
   const tab = await findExcelTab(currentSettings.excelDoc2Url);
   if (!tab) {
     logEvent("error", "Documento 2 no esta abierto en Excel Online.");
@@ -1170,44 +2007,84 @@ const writeExcelOutput = async () => {
     return;
   }
 
-  const rows = [
-    [
-      "#No. Producto",
-      "ASIN",
-      "Cantidad",
-      "No. Guia",
-      "",
-      "",
-      "",
-      "Revisar Manualmente"
-    ]
-  ];
+  const ready = await ensureExcelReady(tab.id);
+  if (!ready) {
+    logEvent("error", "Excel Online no esta listo para pegar datos.");
+    await setLastError("Excel Online no esta listo.");
+    return;
+  }
+
+  if (!currentSettings.doc2Selection.startColumn) {
+    logEvent("error", "No se detecto columna inicial en Documento 2.");
+    await setLastError("Seleccion de Documento 2 incompleta.");
+    return;
+  }
+
+  const fallback = await fallbackGetExcelSelection(tab.id);
+  const frameId = Number.isInteger(fallback.frameId) ? fallback.frameId : null;
+  const startColumn = currentSettings.doc2Selection.startColumn;
+  const startRow = currentSettings.doc2Selection.startRow || 1;
+  const manualColumn =
+    currentSettings.doc2Selection.manualColumn ||
+    columnIndexToLetter(columnLetterToIndex(startColumn) + 7);
+  const manualOffset =
+    columnLetterToIndex(manualColumn) - columnLetterToIndex(startColumn);
+  const width = manualOffset + 1;
+  const headersNeeded = !currentSettings.doc2Selection.headersEnsured;
+
+  const rows = [];
+  if (headersNeeded) {
+    const headerRow = new Array(width).fill("");
+    headerRow[0] = "#No. Producto";
+    headerRow[1] = "ASIN";
+    headerRow[2] = "Cantidad";
+    headerRow[3] = "No. Guia";
+    headerRow[manualOffset] = "Revisar Manualmente";
+    rows.push(headerRow);
+  }
 
   currentSettings.pendingOutput.mainRows.forEach((row) => {
-    rows.push([
-      String(row.index),
-      row.asin,
-      String(row.quantity),
-      row.guide,
-      "",
-      "",
-      "",
-      ""
-    ]);
+    const rowData = new Array(width).fill("");
+    rowData[0] = String(row.index);
+    rowData[1] = row.asin;
+    rowData[2] = String(row.quantity);
+    rowData[3] = row.guide;
+    rows.push(rowData);
   });
 
   currentSettings.pendingOutput.manualRows.forEach((entry) => {
-    rows.push(["", "", "", "", "", "", "", formatManualEntry(entry)]);
+    const rowData = new Array(width).fill("");
+    rowData[manualOffset] = formatManualEntry(entry);
+    rows.push(rowData);
   });
 
-  const tsv = rows.map((row) => row.join("\t")).join("\n");
-  let response = {};
-  try {
-    response = await chrome.tabs.sendMessage(tab.id, { type: "PASTE_TSV", tsv });
-  } catch (error) {
-    logEvent("error", "No se pudo pegar en Documento 2.");
-    await setLastError("No se pudo pegar en Documento 2.");
+  if (!rows.length) {
+    logEvent("error", "No hay filas preparadas para escribir.");
+    await setLastError("Sin filas para escribir.");
     return;
+  }
+
+  const nextIndex =
+    currentSettings.pendingOutput.nextIndex ||
+    currentSettings.doc2Selection.nextIndex ||
+    1;
+  const targetRow = headersNeeded ? startRow : startRow + nextIndex;
+  const targetCell = `${startColumn}${targetRow}`;
+  const selectionResponse = await setExcelSelection(tab.id, frameId, targetCell);
+  if (!selectionResponse || !selectionResponse.ok) {
+    logEvent(
+      "error",
+      "No se pudo mover la seleccion en Excel. Haz clic en la celda de inicio y reintenta."
+    );
+    await setLastError("No se pudo mover la seleccion en Excel.");
+    return;
+  }
+
+  const tsv = rows.map((row) => row.join("\t")).join("\n");
+  let response = await sendExcelMessage(tab.id, frameId, { type: "PASTE_TSV", tsv });
+
+  if (!response || (!response.clipboardOk && !response.pasteOk)) {
+    response = await fallbackPasteExcelTsv(tab.id, tsv);
   }
 
   if (!response.clipboardOk) {
@@ -1253,6 +2130,8 @@ const writeExcelOutput = async () => {
   };
   currentSettings.doc2Selection = {
     ...currentSettings.doc2Selection,
+    manualColumn,
+    headersEnsured: true,
     nextIndex: currentSettings.pendingOutput.nextIndex || currentSettings.doc2Selection.nextIndex
   };
   currentSettings.stats = {
@@ -1287,12 +2166,25 @@ const writeExcelOutput = async () => {
 };
 
 const runAllWorkflow = async () => {
-  await refreshStatus();
-  if (!currentSettings.doc1Selection.guides.length) {
-    await captureDoc1Selection();
+  logEvent("info", "Iniciando ejecucion del flujo.");
+  await setLastError("");
+  try {
+    await refreshStatus();
+    if (!currentSettings.doc1Selection.guides.length) {
+      await captureDoc1Selection();
+    }
+    if (!currentSettings.doc1Selection.guides.length) {
+      logEvent("error", "No se pudieron capturar guias para iniciar el flujo.");
+      await setLastError("No se pudieron capturar guias.");
+      return;
+    }
+    await runAmazonLookup();
+    await writeExcelOutput();
+    logEvent("info", "Flujo completado.");
+  } catch (error) {
+    logEvent("error", `Fallo en ejecucion: ${error.message || error}`);
+    await setLastError("Fallo en ejecucion.");
   }
-  await runAmazonLookup();
-  await writeExcelOutput();
 };
 
 const initTabs = () => {

@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
     mode: "infer",
     range: "",
     column: "",
+    manualColumn: "",
     selectionType: "",
     bagLabel: "",
     guides: [],
@@ -33,6 +34,15 @@ const DEFAULT_SETTINGS = {
   },
   sheetPrimary: "",
   sheetDuplicates: "Duplicados",
+  sheetDoc1: "",
+  msAuth: {
+    clientId: "",
+    tenant: "common",
+    accessToken: "",
+    refreshToken: "",
+    expiresAt: 0,
+    account: ""
+  },
   assistedMode: true,
   validations: {
     dedupeGuide: true,
@@ -72,6 +82,10 @@ const mergeDefaults = (stored) => {
     dedupe: {
       ...DEFAULT_SETTINGS.dedupe,
       ...(stored.dedupe || {})
+    },
+    msAuth: {
+      ...DEFAULT_SETTINGS.msAuth,
+      ...(stored.msAuth || {})
     },
     validations: {
       ...DEFAULT_SETTINGS.validations,

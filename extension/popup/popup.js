@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
     mode: "infer",
     range: "",
     column: "",
+    manualColumn: "",
     selectionType: "",
     bagLabel: "",
     guides: [],
@@ -31,8 +32,17 @@ const DEFAULT_SETTINGS = {
     doc2Guides: [],
     doc2AsinsByGuide: {}
   },
+  sheetDoc1: "",
   sheetPrimary: "",
   sheetDuplicates: "Duplicados",
+  msAuth: {
+    clientId: "",
+    tenant: "common",
+    accessToken: "",
+    refreshToken: "",
+    expiresAt: 0,
+    account: ""
+  },
   assistedMode: true,
   validations: {
     dedupeGuide: true,
@@ -87,6 +97,15 @@ const EXCEL_URL_PATTERNS = [
   "*://excel.cloud.microsoft/*"
 ];
 
+const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
+const GRAPH_SCOPES = [
+  "offline_access",
+  "Files.ReadWrite.All",
+  "Sites.ReadWrite.All",
+  "User.Read"
+];
+const MS_TOKEN_BUFFER_MS = 2 * 60 * 1000;
+
 const STRINGS = {
   es: {
     appTitle: "Guia ASIN ATM",
@@ -106,16 +125,26 @@ const STRINGS = {
     excelDoc1Placeholder: "Link del inventario",
     excelDoc2Label: "Documento 2 (salida)",
     excelDoc2Placeholder: "Link de resultados",
+    sheetDoc1Label: "Hoja Documento 1",
     sheetPrimaryLabel: "Hoja principal",
     sheetDupLabel: "Hoja duplicados",
+    msAuthTitle: "Microsoft Graph",
+    msClientIdLabel: "Client ID",
+    msTenantLabel: "Tenant",
+    msConnectButton: "Conectar Microsoft",
+    msStatusIdle: "Sin sesion",
+    msStatusOk: "Conectado",
+    msStatusExpired: "Sesion expirada",
+    msAuthHint: "La sesion se guarda localmente en la extension.",
     saveConfigButton: "Guardar configuracion",
     doc1SelectionTitle: "Seleccion Documento 1",
     doc1SelectionHint:
-      "Selecciona la columna o bolsa en Excel y presiona Capturar. Si falla, usa Ctrl+C antes.",
+      "Selecciona la columna o bolsa en Excel y presiona Capturar, o escribe la columna manual.",
     doc1ModeLabel: "Modo de seleccion",
     doc1ModeInfer: "Inferir automaticamente",
     doc1ModeBolsa: "Bolsa",
     doc1ModeColumna: "Columna",
+    doc1ManualColLabel: "Columna manual (opcional)",
     captureDoc1Button: "Capturar seleccion",
     doc1RangeLabel: "Rango detectado",
     doc1TypeLabel: "Tipo",
@@ -143,7 +172,7 @@ const STRINGS = {
     integrityTitle: "Estado de integridad",
     doc2ValidationTitle: "Validacion Documento 2",
     doc2ValidationHint:
-      "Selecciona la tabla actual (D-G) y captura para validar duplicados. Si falla, usa Ctrl+C.",
+      "Lee la tabla actual (D-G) para validar duplicados.",
     captureDoc2ExistingButton: "Capturar datos actuales",
     uniqueGuidesLabel: "Guias unicas registradas",
     uniqueAsinsLabel: "ASIN unicos",
@@ -195,16 +224,26 @@ const STRINGS = {
     excelDoc1Placeholder: "Inventory link",
     excelDoc2Label: "Document 2 (output)",
     excelDoc2Placeholder: "Results link",
+    sheetDoc1Label: "Document 1 sheet",
     sheetPrimaryLabel: "Primary sheet",
     sheetDupLabel: "Duplicate sheet",
+    msAuthTitle: "Microsoft Graph",
+    msClientIdLabel: "Client ID",
+    msTenantLabel: "Tenant",
+    msConnectButton: "Connect Microsoft",
+    msStatusIdle: "Signed out",
+    msStatusOk: "Connected",
+    msStatusExpired: "Session expired",
+    msAuthHint: "The session is stored locally in the extension.",
     saveConfigButton: "Save configuration",
     doc1SelectionTitle: "Document 1 selection",
     doc1SelectionHint:
-      "Select the column or bag in Excel and press Capture. If it fails, use Ctrl+C first.",
+      "Select the column or bag in Excel and press Capture, or type the column manually.",
     doc1ModeLabel: "Selection mode",
     doc1ModeInfer: "Auto infer",
     doc1ModeBolsa: "Bag",
     doc1ModeColumna: "Column",
+    doc1ManualColLabel: "Manual column (optional)",
     captureDoc1Button: "Capture selection",
     doc1RangeLabel: "Detected range",
     doc1TypeLabel: "Type",
@@ -232,7 +271,7 @@ const STRINGS = {
     integrityTitle: "Integrity status",
     doc2ValidationTitle: "Document 2 validation",
     doc2ValidationHint:
-      "Select the current table (D-G) and capture to validate duplicates. If it fails, use Ctrl+C.",
+      "Read the current table (D-G) to validate duplicates.",
     captureDoc2ExistingButton: "Capture current data",
     uniqueGuidesLabel: "Unique guides stored",
     uniqueAsinsLabel: "Unique ASINs",
@@ -300,6 +339,10 @@ const mergeDefaults = (stored) => {
     validations: {
       ...DEFAULT_SETTINGS.validations,
       ...(stored.validations || {})
+    },
+    msAuth: {
+      ...DEFAULT_SETTINGS.msAuth,
+      ...(stored.msAuth || {})
     },
     bolsas: Array.isArray(stored.bolsas) ? stored.bolsas : [],
     logs: Array.isArray(stored.logs) ? stored.logs : [],
@@ -497,6 +540,290 @@ const readExcelClipboardCache = async (tabId) => {
   }
 };
 
+const base64UrlEncode = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const generateCodeVerifier = () => {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+};
+
+const sha256 = async (plain) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plain);
+  return crypto.subtle.digest("SHA-256", data);
+};
+
+const createCodeChallenge = async (verifier) => {
+  const hash = await sha256(verifier);
+  return base64UrlEncode(hash);
+};
+
+const getMicrosoftRedirectUrl = () => chrome.identity.getRedirectURL("msauth");
+
+const updateMicrosoftStatus = () => {
+  const status = document.getElementById("msStatus");
+  if (!status) {
+    return;
+  }
+  const expiresAt = currentSettings.msAuth.expiresAt || 0;
+  const hasToken = Boolean(currentSettings.msAuth.accessToken);
+  const isValid = hasToken && Date.now() < expiresAt - MS_TOKEN_BUFFER_MS;
+  if (!hasToken && !currentSettings.msAuth.refreshToken) {
+    status.textContent = getString("msStatusIdle");
+    return;
+  }
+  if (!isValid) {
+    status.textContent = getString("msStatusExpired");
+    return;
+  }
+  status.textContent = getString("msStatusOk");
+};
+
+const saveMicrosoftAuth = async (payload) => {
+  currentSettings.msAuth = {
+    ...currentSettings.msAuth,
+    ...payload
+  };
+  await chrome.storage.local.set({ msAuth: currentSettings.msAuth });
+  updateMicrosoftStatus();
+};
+
+const exchangeMicrosoftToken = async (params) => {
+  const tenant = currentSettings.msAuth.tenant || "common";
+  const response = await fetch(
+    `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString()
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Token error: ${response.status} ${text}`);
+  }
+  return response.json();
+};
+
+const startMicrosoftAuth = async () => {
+  if (!currentSettings.msAuth.clientId) {
+    logEvent("error", "Ingresa el Client ID de Microsoft en Configuracion.");
+    await setLastError("Client ID de Microsoft no configurado.");
+    return false;
+  }
+  const verifier = generateCodeVerifier();
+  const challenge = await createCodeChallenge(verifier);
+  const redirectUrl = getMicrosoftRedirectUrl();
+  const tenant = currentSettings.msAuth.tenant || "common";
+  const scope = GRAPH_SCOPES.join(" ");
+  const authUrl = new URL(
+    `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`
+  );
+  authUrl.searchParams.set("client_id", currentSettings.msAuth.clientId);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("redirect_uri", redirectUrl);
+  authUrl.searchParams.set("response_mode", "query");
+  authUrl.searchParams.set("scope", scope);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("code_challenge", challenge);
+
+  let responseUrl = "";
+  try {
+    responseUrl = await chrome.identity.launchWebAuthFlow({
+      url: authUrl.toString(),
+      interactive: true
+    });
+  } catch (error) {
+    logEvent("error", "No se pudo completar el login de Microsoft.");
+    await setLastError("Login de Microsoft cancelado.");
+    return false;
+  }
+
+  if (!responseUrl) {
+    logEvent("error", "Login de Microsoft no devolvio respuesta.");
+    await setLastError("Login de Microsoft fallido.");
+    return false;
+  }
+
+  const parsed = new URL(responseUrl);
+  const code = parsed.searchParams.get("code");
+  if (!code) {
+    logEvent("error", "Microsoft no devolvio codigo de autorizacion.");
+    await setLastError("Login de Microsoft fallido.");
+    return false;
+  }
+
+  const token = await exchangeMicrosoftToken({
+    client_id: currentSettings.msAuth.clientId,
+    scope,
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUrl,
+    code_verifier: verifier
+  });
+
+  const expiresAt = Date.now() + (token.expires_in || 3600) * 1000;
+  await saveMicrosoftAuth({
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token || currentSettings.msAuth.refreshToken,
+    expiresAt
+  });
+  logEvent("info", "Sesion Microsoft conectada.");
+  await setLastError("");
+  return true;
+};
+
+const refreshMicrosoftToken = async () => {
+  if (!currentSettings.msAuth.refreshToken) {
+    return null;
+  }
+  const scope = GRAPH_SCOPES.join(" ");
+  const token = await exchangeMicrosoftToken({
+    client_id: currentSettings.msAuth.clientId,
+    scope,
+    grant_type: "refresh_token",
+    refresh_token: currentSettings.msAuth.refreshToken
+  });
+  const expiresAt = Date.now() + (token.expires_in || 3600) * 1000;
+  await saveMicrosoftAuth({
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token || currentSettings.msAuth.refreshToken,
+    expiresAt
+  });
+  return token.access_token;
+};
+
+const getMicrosoftAccessToken = async () => {
+  if (!currentSettings.msAuth.clientId) {
+    return "";
+  }
+  const now = Date.now();
+  if (
+    currentSettings.msAuth.accessToken &&
+    now < (currentSettings.msAuth.expiresAt || 0) - MS_TOKEN_BUFFER_MS
+  ) {
+    return currentSettings.msAuth.accessToken;
+  }
+  const refreshed = await refreshMicrosoftToken();
+  return refreshed || "";
+};
+
+const graphRequest = async (path, options = {}) => {
+  const token = await getMicrosoftAccessToken();
+  if (!token) {
+    throw new Error("Microsoft no autenticado.");
+  }
+  const response = await fetch(`${GRAPH_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (response.status === 401) {
+    const refreshed = await refreshMicrosoftToken();
+    if (!refreshed) {
+      throw new Error("Microsoft token expirado.");
+    }
+    const retry = await fetch(`${GRAPH_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${refreshed}`
+      }
+    });
+    if (!retry.ok) {
+      const text = await retry.text();
+      throw new Error(`Graph error: ${retry.status} ${text}`);
+    }
+    return retry.json();
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Graph error: ${response.status} ${text}`);
+  }
+  if (response.status === 204) {
+    return {};
+  }
+  return response.json();
+};
+
+const base64UrlEncodeText = (text) => {
+  const encoder = new TextEncoder();
+  return base64UrlEncode(encoder.encode(text));
+};
+
+const buildShareId = (url) => `u!${base64UrlEncodeText(url)}`;
+
+const graphGetWorksheets = async (shareId) =>
+  graphRequest(`/shares/${shareId}/driveItem/workbook/worksheets`);
+
+const graphGetWorksheet = async (shareId, sheetName) => {
+  const list = await graphGetWorksheets(shareId);
+  const sheets = list.value || [];
+  if (!sheets.length) {
+    throw new Error("No se encontraron hojas en el workbook.");
+  }
+  if (!sheetName) {
+    return sheets[0];
+  }
+  const byName = sheets.find(
+    (sheet) => sheet.name.toLowerCase() === sheetName.toLowerCase()
+  );
+  return byName || sheets[0];
+};
+
+const graphGetRange = async (shareId, sheetId, address) => {
+  const safeAddress = String(address || "").replace(/'/g, "''");
+  const encoded = encodeURIComponent(safeAddress);
+  return graphRequest(
+    `/shares/${shareId}/driveItem/workbook/worksheets/${sheetId}/range(address='${encoded}')`
+  );
+};
+
+const graphGetUsedRange = async (shareId, sheetId) =>
+  graphRequest(
+    `/shares/${shareId}/driveItem/workbook/worksheets/${sheetId}/usedRange(valuesOnly=true)`
+  );
+
+  const graphUpdateRange = async (shareId, sheetId, address, values) => {
+    const safeAddress = String(address || "").replace(/'/g, "''");
+    const encoded = encodeURIComponent(safeAddress);
+    return graphRequest(
+      `/shares/${shareId}/driveItem/workbook/worksheets/${sheetId}/range(address='${encoded}')`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values })
+      }
+    );
+  };
+
+  const isPersonalTenant = (tenant) => {
+    const normalized = String(tenant || "").trim().toLowerCase();
+    return normalized === "consumers" || normalized === "consumer";
+  };
+
+  const isGraphMsaError = (error) => {
+    const message = String(error && error.message ? error.message : error || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+    return (
+      message.includes("msa account") ||
+      message.includes("msa accounts") ||
+      (message.includes("microsoft.excel") && message.includes("not supported")) ||
+      (message.includes("addressurl") && message.includes("microsoft.excel"))
+    );
+  };
+
 const sendExcelMessage = async (tabId, frameId, message) => {
   if (Number.isInteger(frameId)) {
     return safeSendMessage(tabId, message, { frameId });
@@ -576,9 +903,32 @@ const getExcelActiveCell = async (tabId, frameId) => {
   return response;
 };
 
-const setExcelSelection = async (tabId, frameId, range) => {
-  const payload = { type: "SET_SELECTION", range };
-  let response = null;
+  const getExcelSelectionRange = async (tabId, frameId) => {
+    let response = null;
+    if (Number.isInteger(frameId)) {
+      response = await sendExcelMessage(tabId, frameId, { type: "GET_SELECTION_RANGE" });
+    }
+  if (!response) {
+    response = await safeSendMessage(tabId, { type: "GET_SELECTION_RANGE" });
+    }
+    return response;
+  };
+
+  const readColumnValuesFromUi = async (tabId, frameId, options) => {
+    const payload = { type: "READ_COLUMN_VALUES", options };
+    let response = null;
+    if (Number.isInteger(frameId)) {
+      response = await sendExcelMessage(tabId, frameId, payload);
+    }
+    if (!response) {
+      response = await safeSendMessage(tabId, payload);
+    }
+    return response || { ok: false, reason: "no_response" };
+  };
+
+  const setExcelSelection = async (tabId, frameId, range) => {
+    const payload = { type: "SET_SELECTION", range };
+    let response = null;
   if (Number.isInteger(frameId)) {
     response = await sendExcelMessage(tabId, frameId, payload);
   }
@@ -1204,6 +1554,27 @@ const parseCellRef = (value) => {
   };
 };
 
+const parseRangeBounds = (address) => {
+  const token = normalizeRangeToken(address).toUpperCase().replace(/\$/g, "");
+  if (!token) {
+    return null;
+  }
+  const parts = token.split(":");
+  const start = parts[0];
+  const end = parts[1] || parts[0];
+  const startMatch = start.match(/^([A-Z]+)(\d+)?$/);
+  const endMatch = end.match(/^([A-Z]+)(\d+)?$/);
+  if (!startMatch || !endMatch) {
+    return null;
+  }
+  return {
+    startColumn: startMatch[1],
+    endColumn: endMatch[1],
+    startRow: startMatch[2] ? Number.parseInt(startMatch[2], 10) : null,
+    endRow: endMatch[2] ? Number.parseInt(endMatch[2], 10) : null
+  };
+};
+
 const normalizeGuideValue = (value) => {
   if (!value) {
     return "";
@@ -1341,6 +1712,212 @@ const parseGuidesFromClipboard = (text, mode) => {
   }
 
   return best;
+};
+
+const extractColumnValuesFromRange = (rangeData, column) => {
+  if (!rangeData || !Array.isArray(rangeData.values)) {
+    return { values: [], startRow: 1 };
+  }
+  const bounds = parseRangeBounds(rangeData.address || "");
+  if (!bounds) {
+    const values = rangeData.values.map((row) => row[0] || "");
+    return { values, startRow: 1 };
+  }
+  const startRow = bounds.startRow || 1;
+  if (!column) {
+    const values = rangeData.values.map((row) => row[0] || "");
+    return { values, startRow };
+  }
+  const startColIndex = columnLetterToIndex(bounds.startColumn);
+  const targetIndex = columnLetterToIndex(column);
+  const offset = targetIndex - startColIndex;
+  if (offset < 0) {
+    return { values: [], startRow };
+  }
+  const values = rangeData.values.map((row) => row[offset] || "");
+  return { values, startRow };
+};
+
+const loadColumnValuesFromGraph = async (docUrl, sheetName, column) => {
+  const shareId = buildShareId(docUrl);
+  const sheet = await graphGetWorksheet(shareId, sheetName);
+  try {
+    const range = await graphGetRange(shareId, sheet.id, `${column}:${column}`);
+    const { values, startRow } = extractColumnValuesFromRange(range, column);
+    if (values.length) {
+      return { values, startRow, sheet };
+    }
+  } catch (error) {
+    logEvent("info", `Graph: fallo lectura directa de columna. ${error.message || error}`);
+  }
+
+  const used = await graphGetUsedRange(shareId, sheet.id);
+  const { values, startRow } = extractColumnValuesFromRange(used, column);
+  return { values, startRow, sheet };
+};
+
+const parseGuidesFromColumnValues = (values, startRow, selectionBounds, mode) => {
+  const rows = values.map((value, index) => ({
+    row: startRow + index,
+    value
+  }));
+  if (!rows.length) {
+    return {
+      guides: [],
+      invalidCount: 0,
+      duplicateCount: 0,
+      selectionType: mode === "infer" ? "columna" : mode,
+      bagLabel: ""
+    };
+  }
+  const bagRows = rows.filter((row) => /bolsa/i.test(String(row.value || "")));
+  const hasRowBounds =
+    selectionBounds && selectionBounds.startRow && selectionBounds.endRow;
+  const rowSpan = hasRowBounds
+    ? Math.abs(selectionBounds.endRow - selectionBounds.startRow) + 1
+    : null;
+  const bagHeadersInSelection = hasRowBounds
+    ? bagRows.filter(
+        (row) =>
+          row.row >= selectionBounds.startRow &&
+          row.row <= selectionBounds.endRow
+      )
+    : [];
+
+  let selectionType = mode === "infer" ? "columna" : mode;
+  if (mode === "infer") {
+    if (selectionBounds && !selectionBounds.startRow) {
+      selectionType = "columna";
+    } else if (bagHeadersInSelection.length > 1 || (rowSpan && rowSpan > 40)) {
+      selectionType = "columna";
+    } else {
+      selectionType = "bolsa";
+    }
+  }
+  if (selectionType === "bolsa" && bagRows.length === 0) {
+    selectionType = "columna";
+  }
+
+  const guides = [];
+  const invalid = [];
+  const seen = new Set();
+  let duplicateCount = 0;
+  let bagLabel = "";
+  let emptyRun = 0;
+
+  const collectRange = (startIndex, endIndex) => {
+    emptyRun = 0;
+    for (let idx = startIndex; idx <= endIndex; idx += 1) {
+      const rawValue = rows[idx] ? rows[idx].value : "";
+      const value = String(rawValue || "").trim();
+      if (!value) {
+        emptyRun += 1;
+        if (emptyRun >= 3) {
+          break;
+        }
+        continue;
+      }
+      emptyRun = 0;
+      if (/bolsa/i.test(value)) {
+        if (!bagLabel) {
+          bagLabel = value;
+        }
+        continue;
+      }
+      const normalized = normalizeGuideValue(value);
+      if (!normalized) {
+        invalid.push(value);
+        continue;
+      }
+      if (seen.has(normalized)) {
+        duplicateCount += 1;
+        continue;
+      }
+      seen.add(normalized);
+      guides.push(normalized);
+    }
+  };
+
+  if (selectionType === "columna") {
+    const firstBag = bagRows.length ? bagRows[0].row : rows[0]?.row || startRow;
+    if (bagRows.length && !bagLabel) {
+      bagLabel = String(bagRows[0].value || "").trim();
+    }
+    const startIndex = rows.findIndex((row) => row.row === firstBag) + 1;
+    const safeStart = startIndex > 0 ? startIndex : 0;
+    collectRange(safeStart, rows.length - 1);
+  } else {
+    let anchorRow = selectionBounds ? selectionBounds.startRow : null;
+    if (!anchorRow && bagRows.length) {
+      anchorRow = bagRows[0].row;
+    }
+    if (!anchorRow) {
+      collectRange(0, rows.length - 1);
+    } else {
+      const prevBag = bagRows
+        .filter((row) => row.row <= anchorRow)
+        .slice(-1)[0];
+      const nextBag = bagRows.find((row) => row.row > anchorRow);
+      const bagStartRow = prevBag ? prevBag.row : bagRows[0]?.row || anchorRow;
+      const bagEndRow = nextBag ? nextBag.row - 1 : rows[rows.length - 1]?.row;
+      const startIndex = rows.findIndex((row) => row.row === bagStartRow) + 1;
+      const endHit = rows.findIndex((row) => row.row === bagEndRow);
+      const endIndex = endHit >= 0 ? endHit : rows.length - 1;
+      const bagHeader = rows.find((row) => row.row === bagStartRow);
+      if (bagHeader && bagHeader.value && !bagLabel) {
+        bagLabel = String(bagHeader.value).trim();
+      }
+      collectRange(startIndex > 0 ? startIndex : 0, endIndex);
+    }
+  }
+
+  return {
+    guides,
+    invalidCount: invalid.length,
+    duplicateCount,
+    selectionType,
+    bagLabel
+  };
+};
+
+const parseDoc2ExistingFromValues = (values) => {
+  const guides = new Set();
+  const asinsByGuide = {};
+  let maxIndex = 0;
+
+  values.forEach((row) => {
+    const cols = row.map((col) => String(col || "").trim());
+    if (!cols.length || cols.every((col) => !col)) {
+      return;
+    }
+    const lineText = cols.join(" ").toLowerCase();
+    if (lineText.includes("asin") || lineText.includes("producto")) {
+      return;
+    }
+    const indexValue = Number.parseInt(cols[0], 10);
+    if (Number.isFinite(indexValue) && indexValue > maxIndex) {
+      maxIndex = indexValue;
+    }
+    const asin = cols[1] || "";
+    const guideRaw = cols[3] || "";
+    const guide = normalizeGuideValue(guideRaw);
+    if (!asin || !guide) {
+      return;
+    }
+    guides.add(guide);
+    if (!asinsByGuide[guide]) {
+      asinsByGuide[guide] = [];
+    }
+    if (!asinsByGuide[guide].includes(asin)) {
+      asinsByGuide[guide].push(asin);
+    }
+  });
+
+  return {
+    guides: Array.from(guides),
+    asinsByGuide,
+    maxIndex
+  };
 };
 
 const parseDoc2ExistingFromClipboard = (text) => {
@@ -1576,6 +2153,8 @@ const updateDoc1Summary = () => {
   document.getElementById("doc1InvalidCount").textContent =
     currentSettings.doc1Selection.invalidCount || 0;
   document.getElementById("doc1Mode").value = currentSettings.doc1Selection.mode || "infer";
+  document.getElementById("doc1ManualCol").value =
+    currentSettings.doc1Selection.manualColumn || "";
 };
 
 const updateDoc2Summary = () => {
@@ -1620,9 +2199,12 @@ const applySettingsToUI = () => {
   document.getElementById("regionSelect").value = currentSettings.region || "mx";
   document.getElementById("doc1Url").value = currentSettings.excelDoc1Url || "";
   document.getElementById("doc2Url").value = currentSettings.excelDoc2Url || "";
+  document.getElementById("sheetDoc1").value = currentSettings.sheetDoc1 || "";
   document.getElementById("sheetPrimary").value = currentSettings.sheetPrimary || "";
   document.getElementById("sheetDuplicates").value =
     currentSettings.sheetDuplicates || "Duplicados";
+  document.getElementById("msClientId").value = currentSettings.msAuth.clientId || "";
+  document.getElementById("msTenant").value = currentSettings.msAuth.tenant || "common";
 
   document.getElementById("dedupeGuide").checked = currentSettings.validations.dedupeGuide;
   document.getElementById("dedupeAsin").checked = currentSettings.validations.dedupeAsin;
@@ -1647,19 +2229,30 @@ const applySettingsToUI = () => {
   updateDoc2Summary();
   updateIntegrityStats();
   applyTranslations();
+  updateMicrosoftStatus();
 };
 
 const saveConfig = async () => {
   const prevDoc1Url = currentSettings.excelDoc1Url;
   const prevDoc2Url = currentSettings.excelDoc2Url;
+  const prevSheetDoc1 = currentSettings.sheetDoc1;
+  const prevClientId = currentSettings.msAuth.clientId;
+  const prevTenant = currentSettings.msAuth.tenant;
   currentSettings.excelDoc1Url = document.getElementById("doc1Url").value.trim();
   currentSettings.excelDoc2Url = document.getElementById("doc2Url").value.trim();
+  currentSettings.sheetDoc1 = document.getElementById("sheetDoc1").value.trim();
   currentSettings.sheetPrimary = document.getElementById("sheetPrimary").value.trim();
   currentSettings.sheetDuplicates = document
     .getElementById("sheetDuplicates")
     .value.trim();
+  currentSettings.msAuth.clientId = document.getElementById("msClientId").value.trim();
+  currentSettings.msAuth.tenant =
+    document.getElementById("msTenant").value.trim() || "common";
 
   if (prevDoc1Url && prevDoc1Url !== currentSettings.excelDoc1Url) {
+    currentSettings.doc1Selection = { ...DEFAULT_SETTINGS.doc1Selection };
+  }
+  if (prevSheetDoc1 && prevSheetDoc1 !== currentSettings.sheetDoc1) {
     currentSettings.doc1Selection = { ...DEFAULT_SETTINGS.doc1Selection };
   }
   if (prevDoc2Url && prevDoc2Url !== currentSettings.excelDoc2Url) {
@@ -1671,11 +2264,22 @@ const saveConfig = async () => {
       doc2AsinsByGuide: {}
     };
   }
+  if (
+    prevClientId &&
+    (prevClientId !== currentSettings.msAuth.clientId ||
+      prevTenant !== currentSettings.msAuth.tenant)
+  ) {
+    currentSettings.msAuth.accessToken = "";
+    currentSettings.msAuth.refreshToken = "";
+    currentSettings.msAuth.expiresAt = 0;
+  }
   await chrome.storage.local.set({
     excelDoc1Url: currentSettings.excelDoc1Url,
     excelDoc2Url: currentSettings.excelDoc2Url,
+    sheetDoc1: currentSettings.sheetDoc1,
     sheetPrimary: currentSettings.sheetPrimary,
     sheetDuplicates: currentSettings.sheetDuplicates,
+    msAuth: currentSettings.msAuth,
     doc1Selection: currentSettings.doc1Selection,
     doc2Selection: currentSettings.doc2Selection,
     pendingOutput: currentSettings.pendingOutput,
@@ -1692,7 +2296,6 @@ const captureDoc1Selection = async () => {
     await setLastError("Documento 1 sin link.");
     return;
   }
-  const clipboardPromise = navigator.clipboard.readText().catch(() => "");
   const tab = await findExcelTab(currentSettings.excelDoc1Url);
   if (!tab) {
     logEvent("error", "Documento 1 no esta abierto en Excel Online.");
@@ -1707,46 +2310,122 @@ const captureDoc1Selection = async () => {
     return;
   }
 
-  const initialClipboardText = await clipboardPromise;
-  const capture = await collectExcelCapture(tab.id, initialClipboardText);
-  const fallback = capture.fallback || {};
-  let clipboardText = capture.clipboardText || "";
-  if (!clipboardText) {
-    logEvent(
-      "error",
-      `Debug Excel: range=${fallback.range || "-"} cached=${fallback.cachedRange || "-"} cell=${fallback.cachedCell || "-"} ui=${fallback.hasUi ? "si" : "no"} grid=${fallback.hasGrid ? "si" : "no"}`
-    );
-    logEvent(
-      "error",
-      "No se pudo leer la seleccion. Selecciona el rango y presiona Ctrl+C, luego Capturar."
-    );
-    await setLastError("No se pudo leer la seleccion.");
-    return;
+  const fallback = await fallbackGetExcelSelection(tab.id);
+  const response = await getExcelSelectionRange(tab.id, fallback.frameId);
+  let range =
+    (response && response.range) ||
+    fallback.range ||
+    fallback.cachedRange ||
+    fallback.cachedCell ||
+    "";
+  let column = (response && response.column) || extractColumnFromRange(range);
+  const manualColumn = String(currentSettings.doc1Selection.manualColumn || "").trim();
+  if (manualColumn) {
+    const cleaned = manualColumn.toUpperCase().replace(/[^A-Z]/g, "");
+    if (cleaned) {
+      column = cleaned;
+    }
   }
-
-  let range = capture.range || "";
-  let column = capture.column || extractColumnFromRange(range);
   range = normalizeRangeToken(range);
   if (!isRangeRef(range)) {
     range = "";
-    column = "";
+    if (!manualColumn) {
+      column = "";
+    }
   }
-  if (!range && fallback.hasUi) {
+  if (!range && fallback.hasUi && !manualColumn) {
     logEvent(
       "error",
       "Excel detectado, pero no se pudo leer la celda activa. Haz clic en una celda y vuelve a intentar."
     );
   }
 
-  const parsed = parseGuidesFromClipboard(
-    clipboardText,
+  if (!column) {
+    logEvent("error", "No se pudo detectar la columna en Documento 1.");
+    await setLastError("Columna no detectada.");
+    return;
+  }
+
+  let valuesData = null;
+  const selectionBounds = parseRangeBounds(range);
+  const canUseGraph =
+    Boolean(currentSettings.msAuth.clientId) &&
+    !isPersonalTenant(currentSettings.msAuth.tenant);
+
+  if (canUseGraph) {
+    let token = await getMicrosoftAccessToken();
+    if (!token) {
+      const connected = await startMicrosoftAuth();
+      if (connected) {
+        token = await getMicrosoftAccessToken();
+      }
+    }
+    if (token) {
+      try {
+        valuesData = await loadColumnValuesFromGraph(
+          currentSettings.excelDoc1Url,
+          currentSettings.sheetDoc1,
+          column
+        );
+        logEvent(
+          "info",
+          `Graph: columna ${column} con ${valuesData.values.length} filas leidas.`
+        );
+      } catch (error) {
+        if (isGraphMsaError(error)) {
+          logEvent(
+            "info",
+            "Microsoft Graph no soporta cuentas personales. Usando lectura por UI."
+          );
+        } else {
+          logEvent(
+            "error",
+            `No se pudo leer Excel via Microsoft Graph: ${error.message || error}`
+          );
+        }
+      }
+    }
+  } else if (!currentSettings.msAuth.clientId) {
+    logEvent("info", "Microsoft Graph no configurado. Usando lectura por UI.");
+  } else if (isPersonalTenant(currentSettings.msAuth.tenant)) {
+    logEvent("info", "Cuenta personal detectada. Usando lectura por UI.");
+  }
+
+  if (!valuesData) {
+    const startRow = selectionBounds && selectionBounds.startRow
+      ? Math.max(1, selectionBounds.startRow - 20)
+      : 1;
+    const endRow = selectionBounds && selectionBounds.endRow
+      ? selectionBounds.endRow
+      : 0;
+    const uiResult = await readColumnValuesFromUi(tab.id, fallback.frameId, {
+      column,
+      startRow,
+      endRow,
+      maxRows: 1200,
+      stopAfterEmptyRun: 3
+    });
+    if (!uiResult || !uiResult.ok) {
+      logEvent("error", "No se pudo leer la columna desde Excel Online.");
+      await setLastError("No se pudo leer la columna en Excel Online.");
+      return;
+    }
+    valuesData = {
+      values: uiResult.values || [],
+      startRow: uiResult.startRow || startRow
+    };
+    logEvent(
+      "info",
+      `UI: columna ${column} con ${valuesData.values.length} filas leidas.`
+    );
+  }
+
+  const parsed = parseGuidesFromColumnValues(
+    valuesData.values || [],
+    valuesData.startRow || 1,
+    selectionBounds,
     currentSettings.doc1Selection.mode || "infer"
   );
-  const baseColumn = extractColumnFromRange(range);
-  if (Number.isInteger(parsed.columnOffset) && baseColumn) {
-    const baseIndex = columnLetterToIndex(baseColumn);
-    column = columnIndexToLetter(baseIndex + parsed.columnOffset);
-  }
 
   currentSettings.doc1Selection = {
     ...currentSettings.doc1Selection,
@@ -1767,18 +2446,9 @@ const captureDoc1Selection = async () => {
     `Documento 1 capturado. Guias: ${parsed.guides.length}, invalidas: ${parsed.invalidCount}.`
   );
   if (!parsed.guides.length) {
-    const rows = clipboardText.replace(/\r/g, "").split("\n");
-    const maxCols = rows.reduce(
-      (max, row) => Math.max(max, row.split("\t").length),
-      0
-    );
-    logEvent(
-      "info",
-      `Clipboard detectado: filas=${rows.length}, columnas=${maxCols}, longitud=${clipboardText.length}.`
-    );
     logEvent(
       "error",
-      "No se detectaron guias. Verifica la seleccion y que este copiada."
+      "No se detectaron guias. Verifica que la columna tenga datos."
     );
     await setLastError("No se detectaron guias.");
     return;
@@ -1877,14 +2547,17 @@ const captureDoc2Existing = async () => {
     await setLastError("Documento 2 sin link.");
     return;
   }
-  const clipboardPromise = navigator.clipboard.readText().catch(() => "");
+  if (!currentSettings.doc2Selection.startColumn) {
+    logEvent("error", "Captura la celda inicial del Documento 2 primero.");
+    await setLastError("Documento 2 sin celda inicial.");
+    return;
+  }
   const tab = await findExcelTab(currentSettings.excelDoc2Url);
   if (!tab) {
     logEvent("error", "Documento 2 no esta abierto en Excel Online.");
     await setLastError("Documento 2 no esta abierto.");
     return;
   }
-
   const ready = await ensureExcelReady(tab.id);
   if (!ready) {
     logEvent("error", "Excel Online no esta listo para capturar.");
@@ -1892,24 +2565,130 @@ const captureDoc2Existing = async () => {
     return;
   }
 
-  const initialClipboardText = await clipboardPromise;
-  const capture = await collectExcelCapture(tab.id, initialClipboardText);
-  let clipboardText = capture.clipboardText || "";
-  if (!clipboardText) {
-    logEvent(
-      "error",
-      "No se pudo leer la tabla. Selecciona la tabla y presiona Ctrl+C antes de capturar."
-    );
-    await setLastError("No se pudo leer la tabla.");
-    return;
+  let usedRange = null;
+  const canUseGraph =
+    Boolean(currentSettings.msAuth.clientId) &&
+    !isPersonalTenant(currentSettings.msAuth.tenant);
+  if (canUseGraph) {
+    let token = await getMicrosoftAccessToken();
+    if (!token) {
+      const connected = await startMicrosoftAuth();
+      if (connected) {
+        token = await getMicrosoftAccessToken();
+      }
+    }
+    if (token) {
+      try {
+        const shareId = buildShareId(currentSettings.excelDoc2Url);
+        const sheet = await graphGetWorksheet(shareId, currentSettings.sheetPrimary);
+        usedRange = await graphGetUsedRange(shareId, sheet.id);
+      } catch (error) {
+        if (isGraphMsaError(error)) {
+          logEvent(
+            "info",
+            "Microsoft Graph no soporta cuentas personales. Usando lectura por UI."
+          );
+        } else {
+          logEvent(
+            "error",
+            `No se pudo leer Documento 2 con Graph: ${error.message || error}`
+          );
+        }
+      }
+    }
+  } else if (!currentSettings.msAuth.clientId) {
+    logEvent("info", "Microsoft Graph no configurado. Usando lectura por UI.");
+  } else if (isPersonalTenant(currentSettings.msAuth.tenant)) {
+    logEvent("info", "Cuenta personal detectada. Usando lectura por UI.");
   }
 
-  const parsed = parseDoc2ExistingFromClipboard(clipboardText);
-  currentSettings.dedupe = {
-    ...currentSettings.dedupe,
-    doc2Guides: parsed.guides,
-    doc2AsinsByGuide: parsed.asinsByGuide
-  };
+  let rows = [];
+  if (usedRange) {
+    const bounds = parseRangeBounds(usedRange.address || "");
+    if (!bounds || !Array.isArray(usedRange.values)) {
+      logEvent("error", "Documento 2 sin datos detectados.");
+      await setLastError("Documento 2 sin datos.");
+      return;
+    }
+    const usedStartIndex = columnLetterToIndex(bounds.startColumn);
+    const targetIndex = columnLetterToIndex(currentSettings.doc2Selection.startColumn);
+    const offset = targetIndex - usedStartIndex;
+    rows = usedRange.values.map((row) => {
+      const rowData = [];
+      for (let i = 0; i < 4; i += 1) {
+        const value = row[offset + i];
+        rowData.push(value === undefined ? "" : value);
+      }
+      return rowData;
+    });
+  } else {
+    const fallback = await fallbackGetExcelSelection(tab.id);
+    const frameId = Number.isInteger(fallback.frameId) ? fallback.frameId : null;
+    const startColumn = currentSettings.doc2Selection.startColumn;
+    const startRow = currentSettings.doc2Selection.startRow || 1;
+    const guideColumn = columnIndexToLetter(
+      columnLetterToIndex(startColumn) + 3
+    );
+    const guideResult = await readColumnValuesFromUi(tab.id, frameId, {
+      column: guideColumn,
+      startRow,
+      maxRows: 1200,
+      stopAfterEmptyRun: 3
+    });
+    if (!guideResult || !guideResult.ok) {
+      logEvent("error", "No se pudo leer la columna de guia en Documento 2.");
+      await setLastError("No se pudo leer Documento 2 por UI.");
+      return;
+    }
+    const guideValues = guideResult.values || [];
+    let lastIndex = -1;
+    guideValues.forEach((value, index) => {
+      if (String(value || "").trim()) {
+        lastIndex = index;
+      }
+    });
+    const totalRows = lastIndex >= 0 ? lastIndex + 1 : 0;
+    if (!totalRows) {
+      rows = [];
+    } else {
+      const endRow = startRow + totalRows - 1;
+      const indexColumn = startColumn;
+      const asinColumn = columnIndexToLetter(
+        columnLetterToIndex(startColumn) + 1
+      );
+      const indexResult = await readColumnValuesFromUi(tab.id, frameId, {
+        column: indexColumn,
+        startRow,
+        endRow,
+        maxRows: totalRows
+      });
+      const asinResult = await readColumnValuesFromUi(tab.id, frameId, {
+        column: asinColumn,
+        startRow,
+        endRow,
+        maxRows: totalRows
+      });
+      const indexValues = indexResult && indexResult.ok ? indexResult.values || [] : [];
+      const asinValues = asinResult && asinResult.ok ? asinResult.values || [] : [];
+      rows = new Array(totalRows).fill(null).map((_, idx) => [
+        indexValues[idx] || "",
+        asinValues[idx] || "",
+        "",
+        guideValues[idx] || ""
+      ]);
+    }
+    logEvent(
+      "info",
+      `UI: Documento 2 leido con ${rows.length} filas detectadas.`
+    );
+  }
+
+  const parsed = parseDoc2ExistingFromValues(rows);
+    currentSettings.dedupe = {
+      ...currentSettings.dedupe,
+      doc2Guides: parsed.guides,
+      doc2AsinsByGuide: parsed.asinsByGuide
+    };
   if (parsed.guides.length || parsed.maxIndex) {
     currentSettings.doc2Selection.headersEnsured = true;
   }
@@ -1994,34 +2773,30 @@ const writeExcelOutput = async () => {
     await setLastError("Seleccion de Documento 2 no aprobada.");
     return;
   }
-  if (!currentSettings.pendingOutput.mainRows.length && !currentSettings.pendingOutput.manualRows.length) {
+  if (
+    !currentSettings.pendingOutput.mainRows.length &&
+    !currentSettings.pendingOutput.manualRows.length
+  ) {
     logEvent("error", "No hay datos pendientes para escribir.");
     await setLastError("Sin datos pendientes para escribir.");
     return;
   }
-  logEvent("info", "Escribiendo resultados en Excel Online...");
+  logEvent("info", "Preparando escritura en Excel Online.");
+  if (!currentSettings.doc2Selection.startColumn) {
+    logEvent("error", "No se detecto columna inicial en Documento 2.");
+    await setLastError("Seleccion de Documento 2 incompleta.");
+    return;
+  }
   const tab = await findExcelTab(currentSettings.excelDoc2Url);
   if (!tab) {
     logEvent("error", "Documento 2 no esta abierto en Excel Online.");
     await setLastError("Documento 2 no esta abierto.");
     return;
   }
+  const canUseGraph =
+    Boolean(currentSettings.msAuth.clientId) &&
+    !isPersonalTenant(currentSettings.msAuth.tenant);
 
-  const ready = await ensureExcelReady(tab.id);
-  if (!ready) {
-    logEvent("error", "Excel Online no esta listo para pegar datos.");
-    await setLastError("Excel Online no esta listo.");
-    return;
-  }
-
-  if (!currentSettings.doc2Selection.startColumn) {
-    logEvent("error", "No se detecto columna inicial en Documento 2.");
-    await setLastError("Seleccion de Documento 2 incompleta.");
-    return;
-  }
-
-  const fallback = await fallbackGetExcelSelection(tab.id);
-  const frameId = Number.isInteger(fallback.frameId) ? fallback.frameId : null;
   const startColumn = currentSettings.doc2Selection.startColumn;
   const startRow = currentSettings.doc2Selection.startRow || 1;
   const manualColumn =
@@ -2069,33 +2844,86 @@ const writeExcelOutput = async () => {
     currentSettings.doc2Selection.nextIndex ||
     1;
   const targetRow = headersNeeded ? startRow : startRow + nextIndex;
-  const targetCell = `${startColumn}${targetRow}`;
-  const selectionResponse = await setExcelSelection(tab.id, frameId, targetCell);
-  if (!selectionResponse || !selectionResponse.ok) {
-    logEvent(
-      "error",
-      "No se pudo mover la seleccion en Excel. Haz clic en la celda de inicio y reintenta."
-    );
-    await setLastError("No se pudo mover la seleccion en Excel.");
-    return;
+  const endColumn = columnIndexToLetter(
+    columnLetterToIndex(startColumn) + width - 1
+  );
+  const endRow = targetRow + rows.length - 1;
+  const address = `${startColumn}${targetRow}:${endColumn}${endRow}`;
+
+  let wroteOk = false;
+  if (canUseGraph) {
+    let token = await getMicrosoftAccessToken();
+    if (!token) {
+      const connected = await startMicrosoftAuth();
+      if (connected) {
+        token = await getMicrosoftAccessToken();
+      }
+    }
+    if (token) {
+      try {
+        const shareId = buildShareId(currentSettings.excelDoc2Url);
+        const sheet = await graphGetWorksheet(shareId, currentSettings.sheetPrimary);
+        await graphUpdateRange(shareId, sheet.id, address, rows);
+        wroteOk = true;
+        logEvent("info", "Resultados escritos en Excel via Graph.");
+      } catch (error) {
+        if (isGraphMsaError(error)) {
+          logEvent(
+            "info",
+            "Microsoft Graph no soporta cuentas personales. Usando escritura por UI."
+          );
+        } else {
+          logEvent(
+            "error",
+            `No se pudo escribir en Graph: ${error.message || error}`
+          );
+        }
+      }
+    }
+  } else if (!currentSettings.msAuth.clientId) {
+    logEvent("info", "Microsoft Graph no configurado. Usando escritura por UI.");
+  } else if (isPersonalTenant(currentSettings.msAuth.tenant)) {
+    logEvent("info", "Cuenta personal detectada. Usando escritura por UI.");
   }
 
-  const tsv = rows.map((row) => row.join("\t")).join("\n");
-  let response = await sendExcelMessage(tab.id, frameId, { type: "PASTE_TSV", tsv });
-
-  if (!response || (!response.clipboardOk && !response.pasteOk)) {
-    response = await fallbackPasteExcelTsv(tab.id, tsv);
-  }
-
-  if (!response.clipboardOk) {
-    logEvent("error", "No se pudo copiar al portapapeles.");
-    await setLastError("No se pudo copiar al portapapeles.");
-    return;
-  }
-  if (!response.pasteOk) {
-    logEvent("error", "Pegado automatico bloqueado. Pega manualmente con Ctrl+V.");
-    await setLastError("Pegado automatico bloqueado.");
-    return;
+  if (!wroteOk) {
+    const ready = await ensureExcelReady(tab.id);
+    if (!ready) {
+      logEvent("error", "Excel Online no esta listo para escribir.");
+      await setLastError("Excel Online no esta listo.");
+      return;
+    }
+    const fallback = await fallbackGetExcelSelection(tab.id);
+    const frameId = Number.isInteger(fallback.frameId) ? fallback.frameId : null;
+    const selection = await setExcelSelection(tab.id, frameId, address);
+    if (!selection || !selection.ok) {
+      logEvent("error", "No se pudo seleccionar el rango en Excel.");
+      await setLastError("No se pudo seleccionar el rango en Excel.");
+      return;
+    }
+    const tsv = rows
+      .map((row) => row.map((cell) => String(cell ?? "")).join("\t"))
+      .join("\n");
+    let pasteResponse = null;
+    if (Number.isInteger(frameId)) {
+      pasteResponse = await sendExcelMessage(tab.id, frameId, {
+        type: "PASTE_TSV",
+        tsv
+      });
+    }
+    if (!pasteResponse) {
+      pasteResponse = await safeSendMessage(tab.id, { type: "PASTE_TSV", tsv });
+    }
+    if (!pasteResponse || !pasteResponse.ok) {
+      const fallbackPaste = await fallbackPasteExcelTsv(tab.id, tsv);
+      if (!fallbackPaste || !fallbackPaste.pasteOk) {
+        logEvent("error", "No se pudo pegar datos en Excel.");
+        await setLastError("No se pudo pegar datos en Excel.");
+        return;
+      }
+    }
+    wroteOk = true;
+    logEvent("info", "Resultados escritos en Excel via UI.");
   }
 
   const updatedGuides = new Set(currentSettings.dedupe.guides);
@@ -2203,6 +3031,14 @@ const initTabs = () => {
 
 const initEvents = () => {
   document.getElementById("saveConfig").addEventListener("click", saveConfig);
+  document.getElementById("msConnect").addEventListener("click", () => {
+    currentSettings.msAuth.clientId =
+      document.getElementById("msClientId").value.trim();
+    currentSettings.msAuth.tenant =
+      document.getElementById("msTenant").value.trim() || "common";
+    chrome.storage.local.set({ msAuth: currentSettings.msAuth });
+    startMicrosoftAuth();
+  });
   document.getElementById("addBolsa").addEventListener("click", () => {
     const input = document.getElementById("bolsaInput");
     const value = input.value.trim();
@@ -2234,6 +3070,10 @@ const initEvents = () => {
 
   document.getElementById("doc1Mode").addEventListener("change", (event) => {
     currentSettings.doc1Selection.mode = event.target.value;
+    chrome.storage.local.set({ doc1Selection: currentSettings.doc1Selection });
+  });
+  document.getElementById("doc1ManualCol").addEventListener("input", (event) => {
+    currentSettings.doc1Selection.manualColumn = event.target.value.trim().toUpperCase();
     chrome.storage.local.set({ doc1Selection: currentSettings.doc1Selection });
   });
 
@@ -2326,6 +3166,10 @@ const initEvents = () => {
     if (changes.stats) {
       currentSettings.stats = changes.stats.newValue;
       updateIntegrityStats();
+    }
+    if (changes.msAuth) {
+      currentSettings.msAuth = changes.msAuth.newValue || currentSettings.msAuth;
+      updateMicrosoftStatus();
     }
     if (changes.pendingOutput) {
       currentSettings.pendingOutput = changes.pendingOutput.newValue || {

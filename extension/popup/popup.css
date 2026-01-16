@@ -107,6 +107,11 @@ p {
   font-weight: 600;
 }
 
+.field-row .status-pill {
+  align-self: center;
+  justify-self: start;
+}
+
 .controls {
   display: grid;
   grid-template-columns: 1fr 1fr;

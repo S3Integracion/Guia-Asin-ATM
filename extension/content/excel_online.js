@@ -449,6 +449,62 @@
     return false;
   };
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const waitForSelection = async (cellRef, timeoutMs = 800) => {
+    const target = normalizeRangeToken(cellRef).toUpperCase();
+    if (!target) {
+      return false;
+    }
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const current = normalizeRangeToken(getSelectionRange()).toUpperCase();
+      if (current === target || current.startsWith(`${target}:`)) {
+        return true;
+      }
+      await sleep(60);
+    }
+    return false;
+  };
+
+  const readColumnValues = async (options = {}) => {
+    await waitForExcelUi();
+    const column = String(options.column || "").toUpperCase().replace(/[^A-Z]/g, "");
+    const startRow = Math.max(1, Number(options.startRow) || 1);
+    const endRow = Number(options.endRow) || 0;
+    const maxRows = Number(options.maxRows) || 1200;
+    const stopAfterEmptyRun = Number(options.stopAfterEmptyRun) || 3;
+    if (!column) {
+      return { ok: false, reason: "missing_column" };
+    }
+    const values = [];
+    let emptyRun = 0;
+    let seenData = false;
+    const limit = endRow > 0 ? endRow : startRow + maxRows - 1;
+    for (let row = startRow; row <= limit; row += 1) {
+      const cell = `${column}${row}`;
+      const setResult = await setSelectionRange(cell);
+      if (!setResult.ok) {
+        return { ok: false, reason: setResult.reason || "set_failed", values, startRow };
+      }
+      await waitForSelection(cell, 800);
+      await sleep(80);
+      const value = getActiveCellValue();
+      values.push(value);
+      const trimmed = String(value || "").trim();
+      if (trimmed) {
+        seenData = true;
+        emptyRun = 0;
+      } else if (seenData) {
+        emptyRun += 1;
+        if (emptyRun >= stopAfterEmptyRun) {
+          break;
+        }
+      }
+    }
+    return { ok: true, values, startRow };
+  };
+
   const scheduleCacheUpdate = () => {
     setTimeout(updateSelectionCache, 0);
   };
@@ -569,6 +625,19 @@
       captureSelection().then((payload) => {
         sendResponse({ ...payload, ok: hasExcelUi() });
       });
+      return true;
+    }
+
+    if (message.type === "GET_SELECTION_RANGE") {
+      updateSelectionCache();
+      const range = getSelectionRange() || lastKnownRange || "";
+      const column = extractColumnFromRange(range);
+      sendResponse({ ok: hasExcelUi(), range, column });
+      return;
+    }
+
+    if (message.type === "READ_COLUMN_VALUES") {
+      readColumnValues(message.options || message).then(sendResponse);
       return true;
     }
 

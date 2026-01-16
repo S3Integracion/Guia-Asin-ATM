@@ -4,6 +4,33 @@ const DEFAULT_SETTINGS = {
   excelDoc1Url: "",
   excelDoc2Url: "",
   bolsas: [],
+  doc1Selection: {
+    mode: "infer",
+    range: "",
+    column: "",
+    selectionType: "",
+    bagLabel: "",
+    guides: [],
+    invalidCount: 0,
+    duplicateCount: 0,
+    capturedAt: 0
+  },
+  doc2Selection: {
+    startCell: "",
+    startColumn: "",
+    startRow: 1,
+    manualColumn: "",
+    approved: false,
+    headersEnsured: false,
+    nextIndex: 1,
+    capturedAt: 0
+  },
+  dedupe: {
+    guides: [],
+    asinsByGuide: {},
+    doc2Guides: [],
+    doc2AsinsByGuide: {}
+  },
   sheetPrimary: "",
   sheetDuplicates: "Duplicados",
   assistedMode: true,
@@ -12,6 +39,16 @@ const DEFAULT_SETTINGS = {
     dedupeAsin: true,
     accumulateQuantity: true,
     splitDuplicatesToSheet: true
+  },
+  stats: {
+    lastRun: "",
+    lastError: ""
+  },
+  pendingOutput: {
+    mainRows: [],
+    manualRows: [],
+    nextIndex: 1,
+    createdAt: 0
   },
   logs: [],
   history: []
@@ -24,9 +61,29 @@ const mergeDefaults = (stored) => {
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
+    doc1Selection: {
+      ...DEFAULT_SETTINGS.doc1Selection,
+      ...(stored.doc1Selection || {})
+    },
+    doc2Selection: {
+      ...DEFAULT_SETTINGS.doc2Selection,
+      ...(stored.doc2Selection || {})
+    },
+    dedupe: {
+      ...DEFAULT_SETTINGS.dedupe,
+      ...(stored.dedupe || {})
+    },
     validations: {
       ...DEFAULT_SETTINGS.validations,
       ...(stored.validations || {})
+    },
+    stats: {
+      ...DEFAULT_SETTINGS.stats,
+      ...(stored.stats || {})
+    },
+    pendingOutput: {
+      ...DEFAULT_SETTINGS.pendingOutput,
+      ...(stored.pendingOutput || {})
     },
     logs: Array.isArray(stored.logs) ? stored.logs : [],
     history: Array.isArray(stored.history) ? stored.history : []

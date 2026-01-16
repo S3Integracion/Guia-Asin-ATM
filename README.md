@@ -25,5 +25,6 @@ Extension de Chrome para consultar guias de envio en Amazon Seller y registrar A
 
 - UI lista en popup con tabs: Configuracion, Validacion, Ejecucion y Logs.
 - Soporte de idioma (Espanol e Ingles US) y seleccion de region Amazon.
-- Persistencia de links de Excel, hojas destino, columnas de Bolsas y reglas.
-- Validaciones y motor de lectura/escritura pendientes de implementar.
+- Captura de seleccion para Documento 1 y Documento 2 con aprobacion previa.
+- Validacion opcional contra datos existentes del Documento 2.
+- Pipeline basico: captura guias, consulta Amazon, prepara salida y pega en Excel.

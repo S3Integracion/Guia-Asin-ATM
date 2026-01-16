@@ -101,6 +101,73 @@
           </div>
 
           <div class="card">
+            <div class="card-title" data-i18n="doc1SelectionTitle">Seleccion Documento 1</div>
+            <p class="hint" data-i18n="doc1SelectionHint">
+              Selecciona la columna o bolsa en Excel y presiona Capturar.
+            </p>
+            <label class="field">
+              <span data-i18n="doc1ModeLabel">Modo de seleccion</span>
+              <select id="doc1Mode">
+                <option value="infer" data-i18n="doc1ModeInfer">Inferir automaticamente</option>
+                <option value="bolsa" data-i18n="doc1ModeBolsa">Bolsa</option>
+                <option value="columna" data-i18n="doc1ModeColumna">Columna</option>
+              </select>
+            </label>
+            <button class="ghost" id="captureDoc1" type="button">
+              <span data-i18n="captureDoc1Button">Capturar seleccion</span>
+            </button>
+            <div class="stat-row">
+              <div>
+                <span class="stat-label" data-i18n="doc1RangeLabel">Rango detectado</span>
+                <strong id="doc1Range">-</strong>
+              </div>
+              <div>
+                <span class="stat-label" data-i18n="doc1TypeLabel">Tipo</span>
+                <strong id="doc1Type">-</strong>
+              </div>
+            </div>
+            <div class="stat-row">
+              <div>
+                <span class="stat-label" data-i18n="doc1GuidesLabel">Guias listas</span>
+                <strong id="doc1Count">0</strong>
+              </div>
+              <div>
+                <span class="stat-label" data-i18n="doc1InvalidLabel">Guias invalidas</span>
+                <strong id="doc1InvalidCount">0</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="doc2SelectionTitle">Seleccion Documento 2</div>
+            <p class="hint" data-i18n="doc2SelectionHint">
+              Selecciona la celda inicial (encabezado) en Excel y captura la salida.
+            </p>
+            <div class="field-row">
+              <button class="ghost" id="captureDoc2" type="button">
+                <span data-i18n="captureDoc2Button">Capturar salida</span>
+              </button>
+              <button class="primary" id="approveDoc2" type="button">
+                <span data-i18n="approveDoc2Button">Aprobar seleccion</span>
+              </button>
+            </div>
+            <div class="stat-row">
+              <div>
+                <span class="stat-label" data-i18n="doc2StartLabel">Celda inicial</span>
+                <strong id="doc2StartCell">-</strong>
+              </div>
+              <div>
+                <span class="stat-label" data-i18n="doc2ManualLabel">Columna revision</span>
+                <strong id="doc2ManualCol">-</strong>
+              </div>
+            </div>
+            <div class="status-row">
+              <span class="status-label" data-i18n="doc2ApprovalLabel">Aprobacion:</span>
+              <span class="status-pill" id="doc2ApprovalStatus">Pendiente</span>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title" data-i18n="bolsasTitle">Columnas de Bolsas</div>
             <p class="hint" data-i18n="bolsasHint">
               Agrega los encabezados o nombres de columna donde estan los numeros de guia.
@@ -139,6 +206,16 @@
               <input type="checkbox" id="splitDuplicates" />
               <span data-i18n="splitDuplicatesLabel">Enviar duplicados a hoja separada</span>
             </label>
+          </div>
+
+          <div class="card">
+            <div class="card-title" data-i18n="doc2ValidationTitle">Validacion Documento 2</div>
+            <p class="hint" data-i18n="doc2ValidationHint">
+              Selecciona la tabla actual (D-G) y captura para validar duplicados.
+            </p>
+            <button class="ghost" id="captureDoc2Existing" type="button">
+              <span data-i18n="captureDoc2ExistingButton">Capturar datos actuales</span>
+            </button>
           </div>
 
           <div class="card">

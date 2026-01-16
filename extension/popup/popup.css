@@ -89,6 +89,10 @@ p {
   font-size: 12px;
 }
 
+.card .status-row {
+  margin-top: 0;
+}
+
 .status-pill {
   background: var(--mint);
   color: var(--teal);

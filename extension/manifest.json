@@ -12,7 +12,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "tabs", "scripting"],
+  "permissions": ["storage", "tabs", "scripting", "clipboardRead", "clipboardWrite"],
   "host_permissions": [
     "https://sellercentral.amazon.com/*",
     "https://sellercentral.amazon.com.mx/*",
@@ -64,6 +64,7 @@
         "https://*.live.com/*",
         "https://*.sharepoint.com/*"
       ],
+      "all_frames": true,
       "js": ["content/excel_online.js"]
     }
   ]

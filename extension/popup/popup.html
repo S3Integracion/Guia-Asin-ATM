@@ -3,368 +3,84 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Guia ASIN ATM</title>
+    <title>Guia Extractor</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <div class="app" role="application">
-      <header class="app-header">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">GA</div>
-          <div>
-            <h1 data-i18n="appTitle">Guia ASIN ATM</h1>
-            <p data-i18n="appSubtitle">
-              Sincroniza guias con Amazon Seller y Excel Online.
-            </p>
-          </div>
-        </div>
-        <div class="status-row">
-          <span class="status-label" data-i18n="statusLabel">Estado:</span>
-          <span class="status-pill" id="statusSession">Pendiente</span>
-        </div>
+    <main class="app">
+      <header class="header">
+        <h1>Guia Extractor</h1>
+        <p>Pega tus guias y busca en Amazon Seller.</p>
       </header>
 
-      <section class="controls">
-        <label class="control">
-          <span data-i18n="languageLabel">Idioma</span>
-          <select id="languageSelect">
-            <option value="es">Espanol</option>
-            <option value="en">English (US)</option>
-          </select>
-        </label>
-        <label class="control">
-          <span data-i18n="regionLabel">Region Amazon</span>
-          <select id="regionSelect">
-            <option value="mx">Mexico (sellercentral.amazon.com.mx)</option>
-            <option value="us">USA (sellercentral.amazon.com)</option>
-            <option value="ca">Canada (sellercentral.amazon.ca)</option>
-            <option value="es">Espana (sellercentral.amazon.es)</option>
-            <option value="uk">UK (sellercentral.amazon.co.uk)</option>
-            <option value="de">Alemania (sellercentral.amazon.de)</option>
-            <option value="fr">Francia (sellercentral.amazon.fr)</option>
-            <option value="it">Italia (sellercentral.amazon.it)</option>
-            <option value="jp">Japon (sellercentral.amazon.co.jp)</option>
-          </select>
-        </label>
+      <section class="card">
+        <h2>Guias de entrada</h2>
+        <textarea
+          id="guidesInput"
+          rows="8"
+          placeholder="Pega aqui la columna completa de guias"
+        ></textarea>
+        <div class="stats">
+          <div>
+            <span>Validas</span>
+            <strong id="validCount">0</strong>
+          </div>
+          <div>
+            <span>Duplicadas</span>
+            <strong id="duplicateCount">0</strong>
+          </div>
+          <div>
+            <span>Invalidas</span>
+            <strong id="invalidCount">0</strong>
+          </div>
+        </div>
+        <div class="row">
+          <button id="clearGuides" class="ghost">Limpiar</button>
+          <button id="copyGuides" class="ghost">Copiar guias</button>
+        </div>
       </section>
 
-      <nav class="tabs" role="tablist">
-        <button class="tab active" data-tab="config" role="tab" aria-selected="true">
-          <span data-i18n="tabConfig">Configuracion</span>
-        </button>
-        <button class="tab" data-tab="validation" role="tab" aria-selected="false">
-          <span data-i18n="tabValidation">Validacion</span>
-        </button>
-        <button class="tab" data-tab="execution" role="tab" aria-selected="false">
-          <span data-i18n="tabExecution">Ejecucion</span>
-        </button>
-        <button class="tab" data-tab="logs" role="tab" aria-selected="false">
-          <span data-i18n="tabLogs">Logs</span>
-        </button>
-      </nav>
+      <section class="card">
+        <h2>Busqueda en Amazon</h2>
+        <div class="row">
+          <button id="startLookup" class="primary">Buscar en Amazon</button>
+          <button id="stopLookup" class="ghost">Detener</button>
+        </div>
+        <div class="status" id="statusText">Listo para iniciar.</div>
+        <div class="progress">
+          <span>Procesadas</span>
+          <strong id="progressCount">0</strong>
+          <span>/</span>
+          <strong id="progressTotal">0</strong>
+        </div>
+      </section>
 
-      <main class="panels">
-        <section class="panel active" id="panel-config" role="tabpanel">
-          <div class="card">
-            <div class="card-title" data-i18n="excelLinksTitle">Archivos Excel</div>
-            <label class="field">
-              <span data-i18n="excelDoc1Label">Documento 1 (solo lectura)</span>
-              <input
-                id="doc1Url"
-                type="url"
-                placeholder="https://..."
-                data-i18n-placeholder="excelDoc1Placeholder"
-              />
-            </label>
-            <label class="field">
-              <span data-i18n="sheetDoc1Label">Hoja Documento 1</span>
-              <input id="sheetDoc1" type="text" placeholder="Inventario" />
-            </label>
-            <label class="field">
-              <span data-i18n="excelDoc2Label">Documento 2 (salida)</span>
-              <input
-                id="doc2Url"
-                type="url"
-                placeholder="https://..."
-                data-i18n-placeholder="excelDoc2Placeholder"
-              />
-            </label>
-            <div class="field-row">
-              <label class="field">
-                <span data-i18n="sheetPrimaryLabel">Hoja principal</span>
-                <input id="sheetPrimary" type="text" placeholder="Resultados" />
-              </label>
-              <label class="field">
-                <span data-i18n="sheetDupLabel">Hoja duplicados</span>
-                <input id="sheetDuplicates" type="text" placeholder="Duplicados" />
-              </label>
-            </div>
-            <button class="primary" id="saveConfig" type="button">
-              <span data-i18n="saveConfigButton">Guardar configuracion</span>
-            </button>
-          </div>
+      <section class="card">
+        <h2>Resultado (TSV)</h2>
+        <textarea
+          id="outputTsv"
+          rows="6"
+          placeholder="ASIN	CANTIDAD	TRACKING"
+        ></textarea>
+        <div class="row">
+          <button id="copyOutput" class="primary">Copiar resultado</button>
+          <button id="clearOutput" class="ghost">Limpiar</button>
+        </div>
+      </section>
 
-          <div class="card">
-            <div class="card-title" data-i18n="msAuthTitle">Microsoft Graph</div>
-            <label class="field">
-              <span data-i18n="msClientIdLabel">Client ID</span>
-              <input id="msClientId" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
-            </label>
-            <label class="field">
-              <span data-i18n="msTenantLabel">Tenant</span>
-              <input id="msTenant" type="text" placeholder="common" />
-            </label>
-            <div class="field-row">
-              <button class="ghost" id="msConnect" type="button">
-                <span data-i18n="msConnectButton">Conectar Microsoft</span>
-              </button>
-              <div class="status-pill" id="msStatus" data-i18n="msStatusIdle">Sin sesion</div>
-            </div>
-            <p class="hint" data-i18n="msAuthHint">
-              La sesion se guarda localmente en la extension.
-            </p>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="doc1SelectionTitle">Seleccion Documento 1</div>
-            <p class="hint" data-i18n="doc1SelectionHint">
-              Selecciona la columna o bolsa en Excel y presiona Capturar.
-            </p>
-            <label class="field">
-              <span data-i18n="doc1ModeLabel">Modo de seleccion</span>
-              <select id="doc1Mode">
-                <option value="infer" data-i18n="doc1ModeInfer">Inferir automaticamente</option>
-                <option value="bolsa" data-i18n="doc1ModeBolsa">Bolsa</option>
-                <option value="columna" data-i18n="doc1ModeColumna">Columna</option>
-              </select>
-            </label>
-            <label class="field">
-              <span data-i18n="doc1ManualColLabel">Columna manual (opcional)</span>
-              <input id="doc1ManualCol" type="text" placeholder="D" />
-            </label>
-            <button class="ghost" id="captureDoc1" type="button">
-              <span data-i18n="captureDoc1Button">Capturar seleccion</span>
-            </button>
-            <div class="stat-row">
-              <div>
-                <span class="stat-label" data-i18n="doc1RangeLabel">Rango detectado</span>
-                <strong id="doc1Range">-</strong>
-              </div>
-              <div>
-                <span class="stat-label" data-i18n="doc1TypeLabel">Tipo</span>
-                <strong id="doc1Type">-</strong>
-              </div>
-            </div>
-            <div class="stat-row">
-              <div>
-                <span class="stat-label" data-i18n="doc1GuidesLabel">Guias listas</span>
-                <strong id="doc1Count">0</strong>
-              </div>
-              <div>
-                <span class="stat-label" data-i18n="doc1InvalidLabel">Guias invalidas</span>
-                <strong id="doc1InvalidCount">0</strong>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="doc2SelectionTitle">Seleccion Documento 2</div>
-            <p class="hint" data-i18n="doc2SelectionHint">
-              Selecciona la celda inicial (encabezado) en Excel y captura la salida.
-            </p>
-            <div class="field-row">
-              <button class="ghost" id="captureDoc2" type="button">
-                <span data-i18n="captureDoc2Button">Capturar salida</span>
-              </button>
-              <button class="primary" id="approveDoc2" type="button">
-                <span data-i18n="approveDoc2Button">Aprobar seleccion</span>
-              </button>
-            </div>
-            <div class="stat-row">
-              <div>
-                <span class="stat-label" data-i18n="doc2StartLabel">Celda inicial</span>
-                <strong id="doc2StartCell">-</strong>
-              </div>
-              <div>
-                <span class="stat-label" data-i18n="doc2ManualLabel">Columna revision</span>
-                <strong id="doc2ManualCol">-</strong>
-              </div>
-            </div>
-            <div class="status-row">
-              <span class="status-label" data-i18n="doc2ApprovalLabel">Aprobacion:</span>
-              <span class="status-pill" id="doc2ApprovalStatus">Pendiente</span>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="bolsasTitle">Columnas de Bolsas</div>
-            <p class="hint" data-i18n="bolsasHint">
-              Agrega los encabezados o nombres de columna donde estan los numeros de guia.
-            </p>
-            <div class="field-row">
-              <input
-                id="bolsaInput"
-                type="text"
-                placeholder="Bolsa A"
-                data-i18n-placeholder="bolsaPlaceholder"
-              />
-              <button class="ghost" id="addBolsa" type="button">
-                <span data-i18n="addBolsaButton">Agregar</span>
-              </button>
-            </div>
-            <div class="tag-list" id="bolsaList"></div>
-          </div>
-        </section>
-
-        <section class="panel" id="panel-validation" role="tabpanel">
-          <div class="card">
-            <div class="card-title" data-i18n="validationRulesTitle">Reglas persistentes</div>
-            <label class="toggle">
-              <input type="checkbox" id="dedupeGuide" />
-              <span data-i18n="dedupeGuideLabel">No repetir numero de guia</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="dedupeAsin" />
-              <span data-i18n="dedupeAsinLabel">No repetir ASIN</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="accumulateQty" />
-              <span data-i18n="accumulateQtyLabel">Acumular cantidad si ASIN ya existe</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="splitDuplicates" />
-              <span data-i18n="splitDuplicatesLabel">Enviar duplicados a hoja separada</span>
-            </label>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="doc2ValidationTitle">Validacion Documento 2</div>
-            <p class="hint" data-i18n="doc2ValidationHint">
-              Selecciona la tabla actual (D-G) y captura para validar duplicados.
-            </p>
-            <button class="ghost" id="captureDoc2Existing" type="button">
-              <span data-i18n="captureDoc2ExistingButton">Capturar datos actuales</span>
-            </button>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="integrityTitle">Estado de integridad</div>
-            <div class="stat-row">
-              <div>
-                <span class="stat-label" data-i18n="uniqueGuidesLabel">
-                  Guias unicas registradas
-                </span>
-                <strong id="uniqueGuidesCount">0</strong>
-              </div>
-              <div>
-                <span class="stat-label" data-i18n="uniqueAsinsLabel">ASIN unicos</span>
-                <strong id="uniqueAsinsCount">0</strong>
-              </div>
-            </div>
-            <div class="stat-row">
-              <div>
-                <span class="stat-label" data-i18n="lastRunLabel">Ultima corrida</span>
-                <strong id="lastRun">-</strong>
-              </div>
-              <div>
-                <span class="stat-label" data-i18n="lastErrorLabel">Ultimo error</span>
-                <strong id="lastError">-</strong>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel" id="panel-execution" role="tabpanel">
-          <div class="card">
-            <div class="card-title" data-i18n="executionModeTitle">Modo de ejecucion</div>
-            <div class="mode-toggle">
-              <label>
-                <input type="radio" name="mode" value="assisted" checked />
-                <span data-i18n="modeAssisted">Asistido</span>
-              </label>
-              <label>
-                <input type="radio" name="mode" value="direct" />
-                <span data-i18n="modeDirect">Directo</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="card" id="assistedMode">
-            <div class="card-title" data-i18n="assistedTitle">Flujo asistido</div>
-            <ol class="steps">
-              <li data-i18n="step1">Verificar pestanas abiertas y sesion activa</li>
-              <li data-i18n="step2">Leer guias desde Documento 1</li>
-              <li data-i18n="step3">Buscar ASIN y cantidad en Amazon Seller</li>
-              <li data-i18n="step4">Consolidar y validar duplicados</li>
-              <li data-i18n="step5">Escribir resultados en Documento 2</li>
-            </ol>
-            <button class="primary" id="startAssisted" type="button">
-              <span data-i18n="startAssistedButton">Iniciar flujo asistido</span>
-            </button>
-          </div>
-
-          <div class="card hidden" id="directMode">
-            <div class="card-title" data-i18n="directTitle">Panel directo</div>
-            <div class="action-grid">
-              <button class="ghost" id="checkTabs" type="button">
-                <span data-i18n="checkTabsButton">Validar pestanas</span>
-              </button>
-              <button class="ghost" id="scanBolsas" type="button">
-                <span data-i18n="scanBolsasButton">Leer bolsas</span>
-              </button>
-              <button class="ghost" id="scanAmazon" type="button">
-                <span data-i18n="scanAmazonButton">Buscar en Amazon</span>
-              </button>
-              <button class="ghost" id="writeExcel" type="button">
-                <span data-i18n="writeExcelButton">Escribir Excel</span>
-              </button>
-              <button class="primary" id="runAll" type="button">
-                <span data-i18n="runAllButton">Ejecutar todo</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="statusTitle">Estado de sesion</div>
-            <div class="status-list">
-              <div class="status-item">
-                <span class="status-dot" id="sellerStatus"></span>
-                <span data-i18n="sellerStatusLabel">Amazon Seller abierto</span>
-              </div>
-              <div class="status-item">
-                <span class="status-dot" id="doc1Status"></span>
-                <span data-i18n="doc1StatusLabel">Documento 1 abierto</span>
-              </div>
-              <div class="status-item">
-                <span class="status-dot" id="doc2Status"></span>
-                <span data-i18n="doc2StatusLabel">Documento 2 abierto</span>
-              </div>
-            </div>
-            <button class="ghost" id="refreshStatus" type="button">
-              <span data-i18n="refreshStatusButton">Actualizar estado</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="panel" id="panel-logs" role="tabpanel">
-          <div class="card">
-            <div class="card-title" data-i18n="logsTitle">Logs recientes</div>
-            <div class="log-list" id="logList"></div>
-            <button class="ghost" id="clearLogs" type="button">
-              <span data-i18n="clearLogsButton">Limpiar logs</span>
-            </button>
-          </div>
-
-          <div class="card">
-            <div class="card-title" data-i18n="historyTitle">Historial</div>
-            <div class="log-list" id="historyList"></div>
-            <button class="ghost" id="clearHistory" type="button">
-              <span data-i18n="clearHistoryButton">Limpiar historial</span>
-            </button>
-          </div>
-        </section>
-      </main>
-    </div>
+      <section class="card">
+        <h2>Revision manual</h2>
+        <textarea
+          id="manualTsv"
+          rows="6"
+          placeholder="GUIA	ASIN	CANTIDAD	MOTIVO"
+        ></textarea>
+        <div class="row">
+          <button id="copyManual" class="ghost">Copiar revision</button>
+          <button id="clearManual" class="ghost">Limpiar</button>
+        </div>
+      </section>
+    </main>
 
     <script src="popup.js"></script>
   </body>

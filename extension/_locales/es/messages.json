@@ -1,8 +1,8 @@
 {
   "appName": {
-    "message": "Guia ASIN ATM"
+    "message": "Guia Extractor"
   },
   "appDescription": {
-    "message": "Asistente de inventario para leer guias y registrar ASIN y cantidades en Excel Online."
+    "message": "Pega guias y busca en Amazon Seller."
   }
 }

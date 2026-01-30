@@ -2,11 +2,23 @@
   "manifest_version": 3,
   "name": "__MSG_appName__",
   "description": "__MSG_appDescription__",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "default_locale": "es",
   "action": {
     "default_title": "Guia Extractor",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "tracking.png",
+      "32": "tracking.png",
+      "48": "tracking.png",
+      "128": "tracking.png"
+    }
+  },
+  "icons": {
+    "16": "tracking.png",
+    "32": "tracking.png",
+    "48": "tracking.png",
+    "128": "tracking.png"
   },
   "permissions": [
     "storage",

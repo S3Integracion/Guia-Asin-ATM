@@ -57,6 +57,10 @@ body {
   gap: 8px;
 }
 
+.row.single {
+  grid-template-columns: 1fr;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -105,6 +109,11 @@ textarea {
 .ghost {
   background: #eef2ff;
   color: var(--ink);
+}
+
+.danger {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .status {

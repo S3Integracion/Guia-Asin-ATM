@@ -16,6 +16,37 @@
     ]
   };
 
+  const ORDER_ID_PATTERN = /^\d{3}-\d{7}-\d{7}$/;
+  const TRACKING_ID_PATTERN = /^\d{8,14}$/;
+
+  const BACK_TO_LIST_LABELS = [
+    "go back to order list",
+    "back to order list",
+    "volver a la lista de pedidos",
+    "regresar a la lista de pedidos",
+    "ir a la lista de pedidos",
+    "volver al listado de pedidos",
+    "regresar al listado de pedidos"
+  ];
+
+  const ORDER_CONTENTS_LABELS = [
+    "order contents",
+    "contenido del pedido",
+    "contenido de la orden",
+    "articulos del pedido",
+    "artículos del pedido"
+  ];
+
+  const ORDER_DETAILS_INDICATORS = [
+    "order summary",
+    "resumen del pedido",
+    "order contents",
+    "contenido del pedido",
+    "contenido de la orden"
+  ];
+
+  const SEARCH_DELAY_MS = 1000;
+
   const SEARCH_INPUT_SELECTORS = [
     'input[type="search"]',
     'input[type="text"]',
@@ -68,12 +99,40 @@
   ];
 
   let cancelRequested = false;
+  let lookupInProgress = false;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const isVisible = (el) => el && el.offsetParent !== null;
+  const isVisible = (el) => {
+    if (!el) {
+      return false;
+    }
+    const style = window.getComputedStyle?.(el);
+    if (style && (style.display === "none" || style.visibility === "hidden")) {
+      return false;
+    }
+    const rect = el.getBoundingClientRect?.();
+    if (!rect) {
+      return false;
+    }
+    return rect.width > 0 && rect.height > 0;
+  };
 
   const toLower = (value) => String(value || "").trim().toLowerCase();
+
+  const isOrderId = (value) => ORDER_ID_PATTERN.test(String(value || "").trim());
+
+  const getSearchType = (guide) => {
+    const trimmed = String(guide || "").trim();
+    if (isOrderId(trimmed)) {
+      return "order";
+    }
+    const digits = trimmed.replace(/[^\d]/g, "");
+    if (TRACKING_ID_PATTERN.test(digits)) {
+      return "tracking";
+    }
+    return trimmed.includes("-") ? "order" : "tracking";
+  };
 
   const deepQueryAll = (selectorList) => {
     const results = [];
@@ -108,25 +167,28 @@
   };
 
   const findSearchInput = () => {
-    const inputs = deepQueryAll(SEARCH_INPUT_SELECTORS)
-      .filter((el) => el && isVisible(el))
-      .filter((el) => !isExcludedInput(el));
+    const inputs = deepQueryAll(SEARCH_INPUT_SELECTORS).filter(
+      (el) => el && !isExcludedInput(el)
+    );
     if (!inputs.length) {
       return null;
     }
+
+    const visibleInputs = inputs.filter((el) => isVisible(el));
+    const candidates = visibleInputs.length ? visibleInputs : inputs;
 
     const filterSelect = findFilterSelect();
     if (filterSelect) {
       const scope = filterSelect.closest("form, div, section") || filterSelect.parentElement;
       if (scope) {
-        const scopedInput = inputs.find((input) => scope.contains(input));
+        const scopedInput = candidates.find((input) => scope.contains(input));
         if (scopedInput) {
           return scopedInput;
         }
       }
     }
 
-    const scored = inputs.map((input) => {
+    const scored = candidates.map((input) => {
       let score = 0;
       let node = input;
       for (let i = 0; i < 6 && node; i += 1) {
@@ -152,6 +214,60 @@
     });
     scored.sort((a, b) => b.score - a.score);
     return scored[0].input;
+  };
+
+  const findBackToOrdersButton = () => {
+    const candidates = Array.from(
+      document.querySelectorAll(
+        'a, button, [role="button"], input[type="button"], input[type="submit"]'
+      )
+    );
+    return (
+      candidates.find((el) => {
+        if (!isVisible(el)) {
+          return false;
+        }
+        const text = toLower(el.textContent || el.value || "");
+        return BACK_TO_LIST_LABELS.some((label) => text.includes(label));
+      }) || null
+    );
+  };
+
+  const waitForSearchInput = async (timeoutMs = 20000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const input = findSearchInput();
+      if (input) {
+        return input;
+      }
+      await sleep(300);
+    }
+    return null;
+  };
+
+  const ensureSearchInput = async () => {
+    if (isOrderDetailsPage()) {
+      const backButton = findBackToOrdersButton();
+      if (backButton) {
+        backButton.click();
+        return waitForSearchInput();
+      }
+    }
+    const input = findSearchInput();
+    if (input) {
+      return input;
+    }
+    const backButton = findBackToOrdersButton();
+    if (!backButton) {
+      return null;
+    }
+    backButton.click();
+    return waitForSearchInput();
+  };
+
+  const isOrderDetailsPage = () => {
+    const bodyText = toLower(document.body?.textContent || "");
+    return ORDER_DETAILS_INDICATORS.some((label) => bodyText.includes(label));
   };
 
   const findSearchButton = (input) => {
@@ -304,20 +420,38 @@
   const waitForResults = async (guide, timeoutMs = 20000) => {
     const start = Date.now();
     const initialRows = getRowsSnapshot();
+    let lastRows = initialRows;
+    let stableCount = 0;
+    const guideLower = toLower(guide);
     while (Date.now() - start < timeoutMs) {
       if (hasNoResults()) {
         return "empty";
       }
+      if (isOrderDetailsPage()) {
+        return "rows";
+      }
       const rows = getOrderRows();
       if (rows.length) {
         const currentRows = getRowsSnapshot();
-        if (currentRows && currentRows !== initialRows) {
-          return "rows";
-        }
-        if (guide) {
-          const bodyText = toLower(document.body?.textContent || "");
-          if (bodyText.includes(toLower(guide))) {
-            return "rows";
+        if (currentRows) {
+          if (currentRows === lastRows) {
+            stableCount += 1;
+          } else {
+            stableCount = 0;
+            lastRows = currentRows;
+          }
+          if (stableCount >= 2) {
+            if (currentRows !== initialRows) {
+              return "rows";
+            }
+            const input = findSearchInput();
+            const inputValue = toLower(input?.value || "");
+            if (guideLower && inputValue.includes(guideLower)) {
+              return "rows";
+            }
+            if (Date.now() - start > SEARCH_DELAY_MS * 2) {
+              return "rows";
+            }
           }
         }
       }
@@ -347,11 +481,151 @@
     ).map((match) => Number.parseInt(match[1], 10));
   };
 
+  const sanitizeTrackingToken = (token) => {
+    const raw = String(token || "").trim();
+    if (!raw) {
+      return "";
+    }
+    let trimmed = raw;
+    const lower = trimmed.toLowerCase();
+    const cutWords = ["delivery", "delivered", "entrega", "fecha", "date"];
+    cutWords.forEach((word) => {
+      const index = lower.indexOf(word);
+      if (index > 0) {
+        trimmed = trimmed.slice(0, index);
+      }
+    });
+    const digitMatch = trimmed.match(/^(\d{8,14})/);
+    if (digitMatch) {
+      return digitMatch[1];
+    }
+    return trimmed.replace(/[^A-Z0-9-]/gi, "");
+  };
+
   const extractTrackingFromText = (text) => {
     const match = String(text || "").match(
-      /(?:Tracking\s*ID|ID\s*de\s*seguimiento|ID\s*de\s*rastreo|Guia|Guía)\s*[:\s]\s*([A-Z0-9-]+)/i
+      /(?:Tracking\s*ID|ID\s*de\s*seguimiento|ID\s*de\s*rastreo|Guia|Guía)\s*[:#]?\s*([A-Z0-9-]{6,})/i
     );
-    return match ? match[1] : "";
+    return match ? sanitizeTrackingToken(match[1]) : "";
+  };
+
+  const extractTrackingFromDetails = () => {
+    const labelSet = [
+      "tracking id",
+      "id de seguimiento",
+      "id de rastreo"
+    ];
+    const candidates = Array.from(
+      document.querySelectorAll("span, div, dt, dd, th, td, label, strong, b, a")
+    );
+    for (const el of candidates) {
+      const text = toLower(el.textContent || "");
+      if (!text || !labelSet.some((label) => text.includes(label))) {
+        continue;
+      }
+      const combined = [
+        el.textContent || "",
+        el.nextElementSibling?.textContent || "",
+        el.parentElement?.textContent || ""
+      ].join(" ");
+      const tracking = extractTrackingFromText(combined);
+      if (tracking) {
+        return tracking;
+      }
+    }
+    return "";
+  };
+
+  const findSectionHeading = (labels) => {
+    const labelSet = labels.map((label) => toLower(label));
+    const headingCandidates = Array.from(
+      document.querySelectorAll("h1, h2, h3, h4, h5, [role=\"heading\"]")
+    );
+    const match = headingCandidates.find((el) => {
+      const text = toLower(el.textContent || "");
+      return text && labelSet.some((label) => text.includes(label));
+    });
+    if (match) {
+      return match;
+    }
+    const fallbackCandidates = Array.from(document.querySelectorAll("section, div, span"));
+    return (
+      fallbackCandidates.find((el) => {
+        if (el.children.length > 0) {
+          return false;
+        }
+        const text = toLower(el.textContent || "");
+        if (!text || text.length > 60) {
+          return false;
+        }
+        return text && labelSet.some((label) => text.includes(label));
+      }) || null
+    );
+  };
+
+  const findTableAfterNode = (node) => {
+    let current = node;
+    for (let depth = 0; depth < 4 && current; depth += 1) {
+      let sibling = current.nextElementSibling;
+      while (sibling) {
+        if (sibling.matches?.("table")) {
+          return sibling;
+        }
+        const nestedTable = sibling.querySelector?.("table");
+        if (nestedTable) {
+          return nestedTable;
+        }
+        sibling = sibling.nextElementSibling;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  };
+
+  const tableHasLabelNearby = (table, labels) => {
+    const labelSet = labels.map((label) => toLower(label));
+    let node = table;
+    for (let depth = 0; depth < 4 && node; depth += 1) {
+      let sibling = node.previousElementSibling;
+      while (sibling) {
+        const text = toLower(sibling.textContent || "");
+        if (labelSet.some((label) => text.includes(label))) {
+          return true;
+        }
+        sibling = sibling.previousElementSibling;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  };
+
+  const getHeaderInfo = (table) => {
+    const theadRow = table.querySelector("thead tr");
+    if (theadRow) {
+      const cells = Array.from(theadRow.querySelectorAll("th, td"));
+      if (cells.length) {
+        return { cells, row: theadRow };
+      }
+    }
+    const rows = Array.from(table.querySelectorAll("tr"));
+    for (let i = 0; i < rows.length; i += 1) {
+      const cells = Array.from(rows[i].querySelectorAll("th, td"));
+      if (!cells.length) {
+        continue;
+      }
+      const rowText = toLower(cells.map((cell) => cell.textContent || "").join(" "));
+      const hasQuantity = /quantity|cantidad/.test(rowText);
+      const hasProduct = /product|producto|product name|asin/.test(rowText);
+      if (hasQuantity && hasProduct) {
+        return { cells, row: rows[i] };
+      }
+    }
+    return null;
+  };
+
+  const extractQuantityFromCell = (cell) => {
+    const match = String(cell?.textContent || "").match(/\d+/);
+    return match ? Number.parseInt(match[0], 10) : null;
   };
 
   const parseItemsFromText = (text, guide) => {
@@ -381,7 +655,122 @@
     return { items, tracking };
   };
 
-  const extractItemsFromPage = (guide) => {
+  const mergeItemsByAsin = (items, tracking) => {
+    const merged = new Map();
+    items.forEach((item) => {
+      if (!item.asin) {
+        return;
+      }
+      if (!merged.has(item.asin)) {
+        merged.set(item.asin, {
+          ...item,
+          tracking: item.tracking || tracking
+        });
+        return;
+      }
+      const existing = merged.get(item.asin);
+      if (!existing) {
+        return;
+      }
+      if (item.quantity && existing.quantity) {
+        existing.quantity += item.quantity;
+      }
+    });
+    return Array.from(merged.values());
+  };
+
+  const extractItemsFromOrderDetails = (guide) => {
+    const heading = findSectionHeading(ORDER_CONTENTS_LABELS);
+    const preferredTable = heading ? findTableAfterNode(heading) : null;
+    const tables = Array.from(document.querySelectorAll("table"));
+    const candidates = tables
+      .map((table) => {
+        const asins = extractAsinsFromText(table.textContent || "");
+        if (!asins.length) {
+          return null;
+        }
+        const headerInfo = getHeaderInfo(table);
+        const headerText = toLower(
+          headerInfo?.cells.map((cell) => cell.textContent || "").join(" ") || ""
+        );
+        const hasQuantity = /quantity|cantidad/.test(headerText);
+        const hasProduct = /product|producto|product name|asin/.test(headerText);
+        let score = asins.length;
+        if (hasQuantity) {
+          score += 3;
+        }
+        if (hasProduct) {
+          score += 2;
+        }
+        if (headerInfo) {
+          score += 2;
+        }
+        if (tableHasLabelNearby(table, ORDER_CONTENTS_LABELS)) {
+          score += 5;
+        }
+        if (table === preferredTable) {
+          score += 8;
+        }
+        return { table, headerInfo, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    if (!candidates.length) {
+      return { items: [], tracking: "" };
+    }
+
+    const target = candidates[0];
+    const items = [];
+    const headerLabels = target.headerInfo?.cells.map((cell) => toLower(cell.textContent || "")) || [];
+    const qtyIndex = headerLabels.findIndex(
+      (label) => label.includes("quantity") || label.includes("cantidad")
+    );
+    const bodyRows = Array.from(target.table.querySelectorAll("tbody tr"));
+    let rows =
+      bodyRows.length > 0 ? bodyRows : Array.from(target.table.querySelectorAll("tr"));
+    if (target.headerInfo?.row) {
+      rows = rows.filter((row) => row !== target.headerInfo.row);
+    }
+
+    rows.forEach((row) => {
+      const rowText = row.textContent || "";
+      const asins = extractAsinsFromText(rowText);
+      if (!asins.length) {
+        return;
+      }
+      let quantity = null;
+      const cells = Array.from(row.querySelectorAll("td, th"));
+      if (qtyIndex >= 0 && cells[qtyIndex]) {
+        quantity = extractQuantityFromCell(cells[qtyIndex]);
+      }
+      if (!quantity) {
+        const qtyMatches = extractQuantityMatches(rowText);
+        if (qtyMatches.length === 1) {
+          quantity = qtyMatches[0];
+        }
+      }
+      asins.forEach((asin) => {
+        items.push({
+          asin,
+          quantity,
+          tracking: ""
+        });
+      });
+    });
+
+    const tracking =
+      extractTrackingFromDetails() ||
+      extractTrackingFromText(document.body?.textContent || "") ||
+      guide;
+    return { items: mergeItemsByAsin(items, tracking), tracking };
+  };
+
+  const extractItemsFromPage = (guide, searchType) => {
+    if (searchType === "order") {
+      return extractItemsFromOrderDetails(guide);
+    }
+
     const rows = getOrderRows();
     if (rows.length) {
       const items = [];
@@ -393,25 +782,10 @@
         }
         parsed.items.forEach((item) => items.push(item));
       });
-      const merged = new Map();
-      items.forEach((item) => {
-        if (!item.asin) {
-          return;
-        }
-        if (!merged.has(item.asin)) {
-          merged.set(item.asin, { ...item });
-          return;
-        }
-        const existing = merged.get(item.asin);
-        if (existing && item.quantity && existing.quantity) {
-          existing.quantity += item.quantity;
-        }
-      });
-      return { items: Array.from(merged.values()), tracking };
+      return { items: mergeItemsByAsin(items, tracking), tracking };
     }
 
-    const parsed = parseItemsFromText(document.body?.textContent || "", guide);
-    return parsed;
+    return parseItemsFromText(document.body?.textContent || "", guide);
   };
 
   const isLoginPage = () => {
@@ -426,11 +800,11 @@
     if (isLoginPage()) {
       return { guide, status: "error", note: "Sesion no iniciada." };
     }
-    const input = findSearchInput();
+    const input = await ensureSearchInput();
     if (!input) {
       return { guide, status: "error", note: "No se encontro el buscador." };
     }
-    const searchType = guide.includes("-") ? "order" : "tracking";
+    const searchType = getSearchType(guide);
     const filterOk = await selectSearchFilter(searchType);
     if (!filterOk) {
       return {
@@ -441,6 +815,7 @@
     }
     await sleep(250);
     triggerSearch(input, guide);
+    await sleep(SEARCH_DELAY_MS);
     const status = await waitForResults(guide);
     if (status === "timeout") {
       return { guide, status: "error", note: "Tiempo de espera agotado." };
@@ -448,16 +823,25 @@
     if (status === "empty") {
       return { guide, status: "not_found", items: [] };
     }
-    const extracted = extractItemsFromPage(guide);
+    await sleep(SEARCH_DELAY_MS);
+    const extracted = extractItemsFromPage(guide, searchType);
     if (!extracted.items || !extracted.items.length) {
       return { guide, status: "not_found", items: [] };
     }
-    return {
+    const result = {
       guide,
       status: "found",
       items: extracted.items,
       tracking: extracted.tracking || guide
     };
+    if (searchType === "order") {
+      await sleep(200);
+      const backInput = await ensureSearchInput();
+      if (!backInput) {
+        result.note = "No se pudo volver a la lista de pedidos.";
+      }
+    }
+    return result;
   };
 
   const sendProgress = (payload) => {
@@ -494,14 +878,33 @@
       return;
     }
     if (message.type === "START_LOOKUP") {
-      const guides = Array.isArray(message.guides) ? message.guides : [];
-      lookupGuides(guides).then((payload) => {
-        chrome.runtime.sendMessage({
-          type: "LOOKUP_COMPLETE",
-          payload
+      if (lookupInProgress) {
+        sendResponse({
+          ok: false,
+          error: "Ya hay una busqueda en curso."
         });
-        sendResponse({ ok: true });
-      });
+        return;
+      }
+      const guides = Array.isArray(message.guides) ? message.guides : [];
+      lookupInProgress = true;
+      lookupGuides(guides)
+        .then((payload) => {
+          chrome.runtime.sendMessage({
+            type: "LOOKUP_COMPLETE",
+            payload
+          });
+          sendResponse({ ok: true });
+        })
+        .catch((error) => {
+          chrome.runtime.sendMessage({
+            type: "LOOKUP_ERROR",
+            payload: { error: error?.message || "Error en la busqueda." }
+          });
+          sendResponse({ ok: false, error: "Error en la busqueda." });
+        })
+        .finally(() => {
+          lookupInProgress = false;
+        });
       return true;
     }
   });

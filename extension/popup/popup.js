@@ -8,8 +8,11 @@ const progressTotal = document.getElementById("progressTotal");
 const outputTsv = document.getElementById("outputTsv");
 const manualTsv = document.getElementById("manualTsv");
 
+const CACHE_KEY = "lookupCache";
+
 let currentGuides = [];
 let running = false;
+let lastResults = [];
 
 const SELLER_HOST_PATTERNS = [
   "sellercentral.amazon.com",
@@ -33,6 +36,42 @@ const SELLER_HOST_PATTERNS = [
 
 const setStatus = (message) => {
   statusText.textContent = message;
+};
+
+const saveCache = async () => {
+  try {
+    await chrome.storage.local.set({
+      [CACHE_KEY]: {
+        outputTsv: outputTsv.value || "",
+        manualTsv: manualTsv.value || "",
+        results: lastResults,
+        updatedAt: Date.now()
+      }
+    });
+  } catch (error) {
+    // ignore
+  }
+};
+
+const loadCache = async () => {
+  try {
+    const stored = await chrome.storage.local.get(CACHE_KEY);
+    const cached = stored[CACHE_KEY];
+    if (!cached) {
+      return;
+    }
+    if (typeof cached.outputTsv === "string") {
+      outputTsv.value = cached.outputTsv;
+    }
+    if (typeof cached.manualTsv === "string") {
+      manualTsv.value = cached.manualTsv;
+    }
+    if (Array.isArray(cached.results)) {
+      lastResults = cached.results;
+    }
+  } catch (error) {
+    // ignore
+  }
 };
 
 const normalizeGuideToken = (token) => {
@@ -92,6 +131,7 @@ const updateGuideStats = () => {
 };
 
 const buildOutput = (results = []) => {
+  lastResults = results;
   const mainRows = [];
   const manualRows = [];
 
@@ -163,6 +203,7 @@ const buildOutput = (results = []) => {
   manualTsv.value = manualRows
     .map((row) => [row.guide, row.asin, row.quantity, row.reason].join("\t"))
     .join("\n");
+  saveCache();
 };
 
 const getActiveTab = async () => {
@@ -273,6 +314,7 @@ document.getElementById("copyOutput").addEventListener("click", async () => {
 
 document.getElementById("clearOutput").addEventListener("click", () => {
   outputTsv.value = "";
+  saveCache();
 });
 
 document.getElementById("copyManual").addEventListener("click", async () => {
@@ -286,6 +328,15 @@ document.getElementById("copyManual").addEventListener("click", async () => {
 
 document.getElementById("clearManual").addEventListener("click", () => {
   manualTsv.value = "";
+  saveCache();
+});
+
+document.getElementById("clearCache").addEventListener("click", async () => {
+  await chrome.storage.local.clear();
+  outputTsv.value = "";
+  manualTsv.value = "";
+  lastResults = [];
+  setStatus("Cache limpiada.");
 });
 
 let inputTimer = null;
@@ -326,4 +377,5 @@ chrome.runtime.onMessage.addListener((message) => {
 
 document.addEventListener("DOMContentLoaded", () => {
   updateGuideStats();
+  loadCache();
 });
